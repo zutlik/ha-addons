@@ -4,6 +4,12 @@
 
 echo "Starting Shell Command Executor Add-on with FastAPI..."
 
+# Load environment variables from .env file if it exists (for local development)
+if [ -f ".env" ]; then
+    echo "Loading environment variables from .env file"
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
 # Check if HOME_ASSISTANT_TOKEN is already set as an environment variable
 # If not, try to get it from Home Assistant Supervisor options.json
 if [ -z "$HOME_ASSISTANT_TOKEN" ]; then
@@ -20,4 +26,4 @@ fi
 # Start the FastAPI application using Gunicorn with a single Uvicorn worker
 # The app is located at /app/app.py (module app, FastAPI instance 'app')
 # It will listen on 0.0.0.0:8099 as defined in config.json ports and Dockerfile EXPOSE
-gunicorn app.app:app --bind 0.0.0.0:8099 --worker-class uvicorn.workers.UvicornWorker --workers 1 --log-level info
+gunicorn app:app --bind 0.0.0.0:8099 --worker-class uvicorn.workers.UvicornWorker --workers 1 --log-level info
