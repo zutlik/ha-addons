@@ -1,9 +1,9 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
-name: Example add-on
-version: "1.2.0"
-slug: example
-description: Example add-on
-url: "https://github.com/home-assistant/addons-example/tree/main/example"
+name: Publish Scripts
+version: "1.0.0"
+slug: publish-scripts
+description: A FastAPI-based add-on for publishing and managing scripts in Home Assistant with REST API interface
+url: "https://github.com/zutlik/ha-addons/tree/main/publish-scripts"
 arch:
   - armhf
   - armv7
@@ -14,7 +14,8 @@ init: false
 map:
   - share:rw
 options:
-  message: "Hello world..."
+  HOME_ASSISTANT_TOKEN: "your_home_assistant_token_here"
 schema:
-  message: "str?"
-image: "ghcr.io/home-assistant/{arch}-addon-example"
+  HOME_ASSISTANT_TOKEN: "str"
+# Comment out image for development - Home Assistant will build locally
+# image: "m3nadav/zutlik:latest"

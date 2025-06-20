@@ -1,0 +1,18 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start the Publish Scripts service
+# s6-overlay docs: https://github.com/just-containers/s6-overlay
+# ==============================================================================
+
+# Get the Home Assistant token from config
+declare token
+token=$(bashio::config 'HOME_ASSISTANT_TOKEN')
+
+# Export the token for the application
+export HOME_ASSISTANT_TOKEN="${token}"
+
+# Log that we're starting the service
+bashio::log.info "Starting Publish Scripts add-on..."
+
+# Run the application using the run script
+exec /usr/bin/run.sh
