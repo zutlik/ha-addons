@@ -12,4 +12,8 @@
 
 ## 1.0.0
 
-- Initial release
+- Initial release of Publish Scripts add-on
+- FastAPI-based REST API interface
+- Ngrok tunnel functionality
+- Web UI for managing scripts
+- Home Assistant integration support
