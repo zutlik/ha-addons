@@ -1,6 +1,6 @@
-# Example Home Assistant add-on repository
+# Publish Scripts Add-on Repository
 
-This repository can be used as a "blueprint" for add-on development to help you get started.
+This repository contains a Home Assistant add-on for publishing and managing scripts with FastAPI integration.
 
 Add-on documentation: <https://developers.home-assistant.io/docs/add-ons>
 
@@ -10,7 +10,7 @@ Add-on documentation: <https://developers.home-assistant.io/docs/add-ons>
 
 This repository contains the following add-ons
 
-### [Example add-on](./example)
+### [Publish Scripts](./publish-scripts)
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
@@ -18,7 +18,7 @@ This repository contains the following add-ons
 ![Supports armv7 Architecture][armv7-shield]
 ![Supports i386 Architecture][i386-shield]
 
-_Example add-on to use as a blueprint for new add-ons._
+_A FastAPI-based add-on for publishing and managing scripts in Home Assistant with REST API interface._
 
 <!--
 
