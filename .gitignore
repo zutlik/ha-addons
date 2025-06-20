@@ -275,3 +275,11 @@ http-client.private.env.json
 #  pyenv is a Python version management tool that lets you easily switch between multiple versions of Python
 #  .python-version file is created by pyenv to specify the Python version for a project
 .python-version
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*
