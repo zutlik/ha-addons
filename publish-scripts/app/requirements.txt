@@ -1,0 +1,6 @@
+# app/requirements.txt
+fastapi==0.87.0 # Or a compatible version
+uvicorn==0.20.0 # Or a compatible version, ASGI server for FastAPI
+gunicorn==21.2.0 # WSGI HTTP Server for production deployment
+requests==2.26.0 # For making HTTP requests to Home Assistant
+ngrok==1.4.0
