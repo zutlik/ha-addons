@@ -20,5 +20,5 @@ options:
 schema:
   HOME_ASSISTANT_TOKEN: "str"
   HA_BASE_URL: "str?"
-  NGROK_AUTH_TOKEN: "str?"
+  NGROK_AUTH_TOKEN: "str"
 image: "ghcr.io/home-assistant/{arch}-addon-publish-scripts"

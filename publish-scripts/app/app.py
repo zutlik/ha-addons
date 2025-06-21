@@ -17,8 +17,9 @@ app_logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Hardcoded ngrok token for free tier
-NGROK_TOKEN = "1ZnzMWMrIMjxpiPdW9xyUMreTgH_23T5WvNm3NRjBkQdrUGLK"
+# Get ngrok token from environment variables
+# This will be injected by run.sh from add-on options
+NGROK_TOKEN = os.environ.get('NGROK_AUTH_TOKEN')
 
 # Get the Home Assistant token from environment variables
 # This will be injected by run.sh from add-on options
@@ -32,12 +33,18 @@ HA_BASE_URL = os.environ.get('HA_BASE_URL', 'http://supervisor/core/api')
 if HA_BASE_URL and '/core/api' in HA_BASE_URL:
     HA_BASE_URL = HA_BASE_URL.replace('/core/api', '/api')
 
-# Validate that the token is available
+# Validate that the tokens are available
 if not HA_TOKEN:
     app_logger.error("HOME_ASSISTANT_TOKEN environment variable is not set!")
     app_logger.error("Please configure the add-on with a valid Home Assistant token.")
 else:
     app_logger.info(f"Home Assistant Token (first 5 chars): {HA_TOKEN[:5]}...")
+
+if not NGROK_TOKEN:
+    app_logger.error("NGROK_AUTH_TOKEN environment variable is not set!")
+    app_logger.error("Please configure the add-on with a valid ngrok authentication token.")
+else:
+    app_logger.info(f"ngrok Token (first 5 chars): {NGROK_TOKEN[:5]}...")
 
 app_logger.info(f"Home Assistant Base URL: {HA_BASE_URL}")
 app_logger.info(f"ngrok Token configured: {bool(NGROK_TOKEN)}")
