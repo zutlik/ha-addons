@@ -1,13 +1,28 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-dockerfile
 FROM python:3.13.3-slim as builder
 
-# Install build dependencies
+# Install build dependencies with extra packages for i386
+ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     g++ \
     curl \
     jq \
+    && if [ "$TARGETARCH" = "i386" ]; then \
+        apt-get install -y --no-install-recommends \
+        python3-dev \
+        libffi-dev \
+        libssl-dev \
+        libjpeg-dev \
+        zlib1g-dev \
+        libbz2-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        wget \
+        ca-certificates \
+        pkg-config; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory in the container
