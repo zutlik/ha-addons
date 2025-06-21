@@ -108,7 +108,7 @@ class NgrokManager:
         """
         Generate the complete URL that directly executes a script.
         """
-        return f"{tunnel_url}/run_script/{script_id}"
+        return f"{tunnel_url}/scripts/run/{script_id}"
 
     def get_active_tunnels(self):
         """Get all active tunnels"""

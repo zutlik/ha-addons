@@ -1,6 +1,7 @@
 # Services package
 from .ha_client import HomeAssistantClient
 from .ngrok_manager import NgrokManager
+from settings import Settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,7 @@ class ServiceManager:
     def __init__(self):
         self._ha_client = None
         self._ngrok_manager = None
+        self._settings = None
         self._initialized = False
     
     def initialize_services(self):
@@ -19,6 +21,10 @@ class ServiceManager:
             return
         
         try:
+            # Get settings
+            self._settings = Settings()
+            logger.info(f"✅ Settings loaded - port: {self._settings.port}")
+            
             # Initialize Home Assistant client
             self._ha_client = HomeAssistantClient()
             logger.info("✅ Home Assistant client initialized")
@@ -53,6 +59,13 @@ class ServiceManager:
             self.initialize_services()
         return self._ngrok_manager
     
+    @property
+    def settings(self):
+        """Get the settings instance."""
+        if not self._initialized:
+            self.initialize_services()
+        return self._settings
+    
     def is_initialized(self) -> bool:
         """Check if services are initialized."""
         return self._initialized
@@ -81,7 +94,8 @@ class ServiceManager:
             "initialized": True,
             "ha_configured": ha_configured,
             "ha_connected": ha_connected,
-            "ngrok_configured": ngrok_configured
+            "ngrok_configured": ngrok_configured,
+            "port": self._settings.port if self._settings else 8099
         }
 
 # Global service manager instance
@@ -99,3 +113,7 @@ def get_ngrok_manager() -> NgrokManager:
 def get_service_manager() -> ServiceManager:
     """Get the service manager instance."""
     return service_manager
+
+def get_settings():
+    """Get the settings instance."""
+    return service_manager.settings

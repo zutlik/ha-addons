@@ -3,7 +3,7 @@ import logging
 import asyncio
 
 from models import ScriptRequest, TunnelResponse
-from services import get_ha_client, get_ngrok_manager
+from services import get_ha_client, get_ngrok_manager, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
     try:
         ngrok_manager = get_ngrok_manager()
         ha_client = get_ha_client()
+        settings = get_settings()
         
         # Runtime validation
         if not ngrok_manager.is_configured():
@@ -46,8 +47,8 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
                 detail=f"Script '{script_id}' not found in Home Assistant. Please check the script ID."
             )
         
-        # Start ngrok tunnel
-        tunnel_url = ngrok_manager.start_tunnel_subprocess(8000, ngrok_manager.ngrok_token)
+        # Start ngrok tunnel using configurable port
+        tunnel_url = ngrok_manager.start_tunnel_subprocess(settings.port, ngrok_manager.ngrok_token)
         
         if not tunnel_url:
             raise HTTPException(
@@ -69,6 +70,7 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
         
         logger.info(f"✅ Created tunnel for script {script_id}: {tunnel_url}")
         logger.info(f"🔗 Complete URL: {complete_url}")
+        logger.info(f"📡 Forwarding to port: {settings.port}")
         
         return TunnelResponse(
             success=True,
