@@ -10,6 +10,7 @@ if str(current_dir) not in sys.path:
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 import logging
+from fastapi.staticfiles import StaticFiles
 
 from services import get_service_manager, get_ha_client, get_ngrok_manager
 from settings import get_settings, Settings
@@ -42,7 +43,7 @@ def create_app(settings: Settings = None) -> FastAPI:
         
         # Test Home Assistant connectivity
         # TODO: Update this to check the HA API is reachable
-        test_home_assistant_connectivity()
+        # test_home_assistant_connectivity()  # Commented out for local development
         
         logger.info("✅ Publish Scripts add-on started successfully!")
         
@@ -125,6 +126,7 @@ def test_home_assistant_connectivity():
 
 # For production:
 app = create_app()
+app.mount("/gui", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
