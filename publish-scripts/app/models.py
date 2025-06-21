@@ -26,7 +26,7 @@ class ScriptResponse(BaseModel):
     success: bool
     message: str
     script_id: str
-    result: Optional[Any] = None
+    result: Any  # Accept any type, not just dict
     error: Optional[str] = None
 
 class StartNgrokTunnelRequest(BaseModel):
