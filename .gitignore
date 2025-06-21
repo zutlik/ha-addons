@@ -283,3 +283,6 @@ http-client.private.env.json
 .env.test
 .env.production
 .env.*
+
+# macOS
+.DS_Store

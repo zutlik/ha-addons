@@ -1,9 +1,9 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Publish Scripts
-version: "1.2.0"
+version: "1.0.0"
 slug: publish-scripts
-description: Home Assistant addon for managing scripts and ngrok tunnels
-url: "https://github.com/home-assistant/addons-example/tree/main/publish-scripts"
+description: A FastAPI-based add-on for publishing and managing scripts in Home Assistant with REST API interface
+url: "https://github.com/zutlik/ha-addons/tree/main/publish-scripts"
 arch:
   - armhf
   - armv7
@@ -21,4 +21,5 @@ schema:
   HOME_ASSISTANT_TOKEN: "str"
   HA_BASE_URL: "str?"
   NGROK_AUTH_TOKEN: "str"
-image: "ghcr.io/home-assistant/{arch}-addon-publish-scripts"
+restart_policy: unless-stopped
+image: "m3nadav/zutlik:latest"
