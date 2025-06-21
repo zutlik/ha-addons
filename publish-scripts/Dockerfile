@@ -1,5 +1,5 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-dockerfile
-FROM python:3.13.3-slim as builder
+FROM python:3.11-slim as builder
 
 # Install build dependencies with extra packages for i386
 ARG TARGETARCH
@@ -36,14 +36,16 @@ COPY app/requirements-i386.txt .
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "i386" ]; then \
         echo "Using i386-specific requirements" && \
-        pip install --no-cache-dir --user -r requirements-i386.txt; \
+        pip install --no-cache-dir --user -r requirements-i386.txt || \
+        (echo "Some packages failed to install, continuing with available packages" && \
+         pip install --no-cache-dir --user fastapi==0.88.0 uvicorn==0.20.0 requests==2.28.1 gunicorn==20.1.0); \
     else \
         echo "Using standard requirements" && \
         pip install --no-cache-dir --user -r requirements.txt; \
     fi
 
 # Final stage
-FROM python:3.13.3-slim
+FROM python:3.11-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -52,37 +54,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ngrok binary for non-i386 architectures (i386 uses Python package)
+# Install ngrok binary for all architectures (as fallback for Python package issues)
 ARG TARGETARCH
-RUN if [ "$TARGETARCH" != "i386" ]; then \
-        echo "Installing ngrok binary for $TARGETARCH"; \
-        case "$TARGETARCH" in \
-            amd64) \
-                wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
-                && tar -xzf ngrok-v3-stable-linux-amd64.tgz \
-                && mv ngrok /usr/local/bin/ \
-                && rm ngrok-v3-stable-linux-amd64.tgz \
-                ;; \
-            arm64) \
-                wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz \
-                && tar -xzf ngrok-v3-stable-linux-arm64.tgz \
-                && mv ngrok /usr/local/bin/ \
-                && rm ngrok-v3-stable-linux-arm64.tgz \
-                ;; \
-            arm) \
-                wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz \
-                && tar -xzf ngrok-v3-stable-linux-arm.tgz \
-                && mv ngrok /usr/local/bin/ \
-                && rm ngrok-v3-stable-linux-arm.tgz \
-                ;; \
-            *) \
-                echo "Unsupported architecture: $TARGETARCH" \
-                && exit 1 \
-                ;; \
-        esac; \
-    else \
-        echo "Skipping ngrok binary installation for i386 (using Python package)"; \
-    fi
+RUN case "$TARGETARCH" in \
+        amd64) \
+            echo "Installing ngrok binary for amd64" && \
+            wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz && \
+            tar -xzf ngrok-v3-stable-linux-amd64.tgz && \
+            mv ngrok /usr/local/bin/ && \
+            rm ngrok-v3-stable-linux-amd64.tgz \
+            ;; \
+        arm64) \
+            echo "Installing ngrok binary for arm64" && \
+            wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz && \
+            tar -xzf ngrok-v3-stable-linux-arm64.tgz && \
+            mv ngrok /usr/local/bin/ && \
+            rm ngrok-v3-stable-linux-arm64.tgz \
+            ;; \
+        arm) \
+            echo "Installing ngrok binary for arm" && \
+            wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz && \
+            tar -xzf ngrok-v3-stable-linux-arm.tgz && \
+            mv ngrok /usr/local/bin/ && \
+            rm ngrok-v3-stable-linux-arm.tgz \
+            ;; \
+        i386) \
+            echo "Installing ngrok binary for i386" && \
+            wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-386.tgz && \
+            tar -xzf ngrok-v3-stable-linux-386.tgz && \
+            mv ngrok /usr/local/bin/ && \
+            rm ngrok-v3-stable-linux-386.tgz \
+            ;; \
+        *) \
+            echo "Unsupported architecture: $TARGETARCH" && \
+            exit 1 \
+            ;; \
+    esac
 
 # Set the working directory in the container
 WORKDIR /app
