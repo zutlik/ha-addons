@@ -66,6 +66,7 @@ async def run_script(script_id: str):
         ha_client = get_ha_client()
         
         # Execute the script in Home Assistant
+        # TODO: Add a check to see if the script has been executed successfully
         result = await ha_client.run_script_async(script_id)
         
         logger.info(f"✅ Script {script_id} executed successfully")
