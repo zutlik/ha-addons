@@ -19,6 +19,7 @@ if [ -z "$HOME_ASSISTANT_TOKEN" ]; then
     # (e.g., RUN apt-get update && apt-get install -y jq)
     export HOME_ASSISTANT_TOKEN=$(jq --raw-output '.HOME_ASSISTANT_TOKEN' /data/options.json)
     echo "Using Home Assistant token from /data/options.json"
+    echo "HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN:0:10}..."
 else
     echo "Using HOME_ASSISTANT_TOKEN from environment variable"
 fi
