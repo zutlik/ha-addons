@@ -202,12 +202,21 @@ function showSuccess(message) {
     
     setTimeout(() => {
         successDiv.remove();
-    }, 3000);
+    }, 5000);
 }
 
 // Create URL section HTML
 function createUrlSection(script, tunnelInfo) {
-    if (!tunnelInfo) return '';
+    if (!tunnelInfo) {
+        return `
+            <div class="url-section" style="border-color: #64748b; background: #1e293b80;">
+                <div class="url-label-container">
+                    <div class="url-label" style="color: #64748b;">No public URL</div>
+                </div>
+                <div class="url-text" style="color: #64748b;">Click "Share" to create a public URL for this script</div>
+            </div>
+        `;
+    }
     
     return `
         <div class="url-section">
@@ -407,6 +416,11 @@ async function init() {
         showError('Failed to initialize the application');
     }
 }
+
+// Make functions globally available for HTML onclick attributes
+window.shareScript = shareScript;
+window.revokeUrl = revokeUrl;
+window.copyToClipboard = copyToClipboard;
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);
