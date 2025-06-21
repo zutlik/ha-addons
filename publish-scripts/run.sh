@@ -36,13 +36,39 @@ fi
 # Check if HA_BASE_URL is already set as an environment variable
 # If not, try to get it from Home Assistant Supervisor options.json
 if [ -z "$HA_BASE_URL" ]; then
-    export HA_BASE_URL=$(jq --raw-output '.HA_BASE_URL' /data/options.json)
-    echo "Using HA_BASE_URL from /data/options.json"
+    # Try to read HA_BASE_URL from options.json, but continue if it fails
+    if [ -f "/data/options.json" ] && jq -e '.HA_BASE_URL' /data/options.json > /dev/null 2>&1; then
+        export HA_BASE_URL=$(jq --raw-output '.HA_BASE_URL' /data/options.json)
+        echo "Using HA_BASE_URL from /data/options.json"
+    else
+        echo "No HA_BASE_URL found in /data/options.json, continuing without it"
+    fi
 else
     echo "Using HA_BASE_URL from environment variable"
 fi
 
+# Check if PORT is already set as an environment variable
+# If not, try to get it from Home Assistant Supervisor options.json
+if [ -z "$PORT" ]; then
+    # Try to read PORT from options.json, but continue if it fails
+    if [ -f "/data/options.json" ] && jq -e '.PORT' /data/options.json > /dev/null 2>&1; then
+        export PORT=$(jq --raw-output '.PORT' /data/options.json)
+        echo "Using PORT from /data/options.json: $PORT"
+    else
+        echo "No PORT found in /data/options.json, using default: 8099"
+        export PORT=8099
+    fi
+else
+    echo "Using PORT from environment variable: $PORT"
+fi
+
+# Set the app directory as the base for Python imports
+export PYTHONPATH="/app:${PYTHONPATH:-}"
+
+# Change to the app directory to ensure all imports work correctly
+cd /app
+
 # Start the FastAPI application using Gunicorn with a single Uvicorn worker
-# The app is located at /app/app.py (module app, FastAPI instance 'app')
-# It will listen on 0.0.0.0:8099 as defined in config.json ports and Dockerfile EXPOSE
-gunicorn app:app --bind 0.0.0.0:8099 --worker-class uvicorn.workers.UvicornWorker --workers 1 --log-level info
+# The app is located at /app/main.py (module main, FastAPI instance 'app')
+# It will listen on 0.0.0.0:$PORT as defined in config.json ports and Dockerfile EXPOSE
+gunicorn main:app --bind 0.0.0.0:$PORT --worker-class uvicorn.workers.UvicornWorker --workers 1 --log-level info

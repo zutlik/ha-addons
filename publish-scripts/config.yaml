@@ -17,9 +17,11 @@ options:
   HOME_ASSISTANT_TOKEN: "your_token_here"
   HA_BASE_URL: "http://supervisor/core/api"
   NGROK_AUTH_TOKEN: ""
+  PORT: 8099
 schema:
   HOME_ASSISTANT_TOKEN: "str"
   HA_BASE_URL: "str?"
   NGROK_AUTH_TOKEN: "str"
+  PORT: "int"
 restart_policy: unless-stopped
 image: "m3nadav/zutlik"

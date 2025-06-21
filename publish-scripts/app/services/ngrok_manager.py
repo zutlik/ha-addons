@@ -1,27 +1,32 @@
-# app/ngrok_manager.py
-import os
 import subprocess
 import time
 import requests
 import logging
+from settings import get_settings
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 class NgrokManager:
     def __init__(self):
-        self.ngrok_token = os.environ.get('NGROK_AUTH_TOKEN')
+        settings = get_settings()
+        self.ngrok_token = settings.ngrok_auth_token
         self.active_tunnels = {}  # Store active tunnels by script_id
         self.ngrok_process = None
         
-        # Validate ngrok token
+        # Log ngrok token status (don't raise exception for missing token)
         if not self.ngrok_token:
-            logger.error("NGROK_AUTH_TOKEN environment variable is not set!")
-            logger.error("Please configure the add-on with a valid ngrok authentication token.")
+            logger.warning("⚠️  NGROK_AUTH_TOKEN environment variable is not set!")
+            logger.warning("   Ngrok functionality will be disabled.")
+            logger.warning("   To enable ngrok tunnels, add NGROK_AUTH_TOKEN to configuration.")
         else:
-            logger.info(f"ngrok Token (first 5 chars): {self.ngrok_token[:5]}...")
+            logger.info(f"✅ ngrok Token (first 5 chars): {self.ngrok_token[:5]}...")
         
         logger.info(f"ngrok Token configured: {bool(self.ngrok_token)}")
+
+    def is_configured(self) -> bool:
+        """Check if ngrok is properly configured."""
+        return bool(self.ngrok_token)
 
     def start_tunnel_subprocess(self, port, token=None):
         """
@@ -103,7 +108,7 @@ class NgrokManager:
         """
         Generate the complete URL that directly executes a script.
         """
-        return f"{tunnel_url}/run_script/{script_id}"
+        return f"{tunnel_url}/scripts/run/{script_id}"
 
     def get_active_tunnels(self):
         """Get all active tunnels"""

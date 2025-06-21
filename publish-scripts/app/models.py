@@ -1,6 +1,5 @@
-# app/models.py
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Any, Optional
 
 # Pydantic model for script request
 class ScriptRequest(BaseModel):

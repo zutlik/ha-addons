@@ -1,20 +1,16 @@
-# app/ha_client.py
-import os
 import requests
 import logging
 from typing import Optional, List, Dict, Any
+from settings import get_settings
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 class HomeAssistantClient:
     def __init__(self):
-        self.ha_token = os.environ.get('HOME_ASSISTANT_TOKEN')
-        self.ha_base_url = os.environ.get('HA_BASE_URL', 'http://supervisor/core/api')
-        
-        # Fix the base URL if it contains /core/api (remove /core)
-        if self.ha_base_url and '/core/api' in self.ha_base_url:
-            self.ha_base_url = self.ha_base_url.replace('/core/api', '/api')
+        settings = get_settings()
+        self.ha_token = settings.home_assistant_token
+        self.ha_base_url = settings.ha_base_url
         
         # Validate that the token is available
         if not self.ha_token:
@@ -24,6 +20,31 @@ class HomeAssistantClient:
             logger.info(f"Home Assistant Token (first 5 chars): {self.ha_token[:5]}...")
         
         logger.info(f"Home Assistant Base URL: {self.ha_base_url}")
+
+    def test_connection(self) -> bool:
+        """
+        Test connectivity to Home Assistant.
+        """
+        if not self.ha_token:
+            logger.error("Cannot test connection: Home Assistant token not configured")
+            return False
+        
+        headers = {
+            "Authorization": f"Bearer {self.ha_token}",
+            "Content-Type": "application/json"
+        }
+        
+        url = f"{self.ha_base_url}/"
+        logger.info(f"Testing Home Assistant connectivity: {url}")
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            logger.info("✅ Home Assistant connectivity test successful")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Home Assistant connectivity test failed: {e}")
+            return False
 
     def call_api(self, service: str, data: Optional[dict] = None) -> dict:
         """

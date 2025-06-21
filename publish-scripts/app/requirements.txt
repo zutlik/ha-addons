@@ -1,7 +1,8 @@
-# app/requirements.txt
-fastapi==0.87.0 # Or a compatible version
-uvicorn==0.20.0 # Or a compatible version, ASGI server for FastAPI
+fastapi==0.115.0 # Updated to latest version with Python 3.13 support
+uvicorn==0.32.0 # Updated ASGI server for FastAPI
 gunicorn==21.2.0 # WSGI HTTP Server for production deployment
-requests==2.26.0 # For making HTTP requests to Home Assistant
+requests==2.31.0 # For making HTTP requests to Home Assistant
 ngrok==1.4.0
 pyngrok==7.0.0 # Python wrapper for ngrok
+pydantic==2.10.0 # Updated to version with Python 3.13 support
+pydantic-settings==2.8.0 # Updated settings management for Pydantic v2
