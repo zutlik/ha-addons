@@ -1,5 +1,4 @@
-// API configuration
-const API_BASE_URL = window.location.origin; // Use the same origin as the add-on
+// API configuration - No longer needed, using relative paths
 
 // State management
 let scriptsData = [];
@@ -20,7 +19,7 @@ function createElement(tag, className = '', textContent = '') {
 // API functions
 async function fetchScripts() {
     try {
-        const response = await fetch(`${API_BASE_URL}/scripts/`);
+        const response = await fetch(`scripts/`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -36,7 +35,7 @@ async function fetchScripts() {
 
 async function createTunnel(scriptId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/tunnels/create`, {
+        const response = await fetch(`tunnels/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -59,7 +58,7 @@ async function createTunnel(scriptId) {
 
 async function deleteTunnel(scriptId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/tunnels/${scriptId}`, {
+        const response = await fetch(`tunnels/${scriptId}`, {
             method: 'DELETE'
         });
         
@@ -78,7 +77,7 @@ async function deleteTunnel(scriptId) {
 
 async function fetchTunnels() {
     try {
-        const response = await fetch(`${API_BASE_URL}/tunnels/`);
+        const response = await fetch(`tunnels/`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
