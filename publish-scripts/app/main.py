@@ -7,7 +7,7 @@ current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 import logging
 
@@ -15,7 +15,7 @@ from services import get_service_manager, get_ha_client, get_ngrok_manager
 from settings import get_settings, Settings
 
 # Import routers
-from routers import health, tunnels, scripts, debug
+from routers import health, tunnels, scripts
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,10 +41,12 @@ def create_app(settings: Settings = None) -> FastAPI:
         validate_startup_configuration()
         
         # Test Home Assistant connectivity
+        # TODO: Update this to check the HA API is reachable
         test_home_assistant_connectivity()
         
         logger.info("✅ Publish Scripts add-on started successfully!")
         
+        # TODO: Make sure the context manager is actually working and the ngrok is being stopped
         yield
         
         # Cleanup on shutdown
@@ -63,7 +65,6 @@ def create_app(settings: Settings = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(tunnels.router)
     app.include_router(scripts.router)
-    app.include_router(debug.router)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request, exc):
