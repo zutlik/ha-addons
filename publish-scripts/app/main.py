@@ -126,7 +126,7 @@ def test_home_assistant_connectivity():
 
 # For production:
 app = create_app()
-app.mount("/static/v1.0.0", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
+app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn

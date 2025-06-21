@@ -21,3 +21,5 @@ schema:
 restart_policy: unless-stopped
 image: "m3nadav/publish-scripts"
 homeassistant_api: true
+ingress: true
+ingress_port: 8099
