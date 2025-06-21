@@ -76,7 +76,7 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
             raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found in Home Assistant")
         
         # Start ngrok tunnel
-        tunnel_url = ngrok_manager.start_tunnel_subprocess(8000, ngrok_manager.ngrok_token)
+        tunnel_url = ngrok_manager.start_tunnel_subprocess(8099, ngrok_manager.ngrok_token)
         
         if not tunnel_url:
             raise HTTPException(status_code=500, detail="Failed to create ngrok tunnel")

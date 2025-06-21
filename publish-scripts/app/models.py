@@ -1,6 +1,6 @@
 # app/models.py
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 
 # Pydantic model for script request
 class ScriptRequest(BaseModel):
@@ -27,7 +27,7 @@ class ScriptResponse(BaseModel):
     success: bool
     message: str
     script_id: str
-    result: Optional[dict] = None
+    result: Any  # Accept any type, not just dict
     error: Optional[str] = None
 
 class StartNgrokTunnelRequest(BaseModel):
