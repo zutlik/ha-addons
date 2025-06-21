@@ -1,0 +1,6 @@
+# app/requirements-i386.txt
+# Requirements file specifically for i386 architecture with better compatibility
+fastapi==0.88.0
+uvicorn==0.20.0
+requests==2.28.1
+gunicorn==20.1.0 

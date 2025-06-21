@@ -24,6 +24,24 @@ else
     echo "Using HOME_ASSISTANT_TOKEN from environment variable"
 fi
 
+# Check if NGROK_AUTH_TOKEN is already set as an environment variable
+# If not, try to get it from Home Assistant Supervisor options.json
+if [ -z "$NGROK_AUTH_TOKEN" ]; then
+    export NGROK_AUTH_TOKEN=$(jq --raw-output '.NGROK_AUTH_TOKEN' /data/options.json)
+    echo "Using ngrok auth token from /data/options.json"
+else
+    echo "Using NGROK_AUTH_TOKEN from environment variable"
+fi
+
+# Check if HA_BASE_URL is already set as an environment variable
+# If not, try to get it from Home Assistant Supervisor options.json
+if [ -z "$HA_BASE_URL" ]; then
+    export HA_BASE_URL=$(jq --raw-output '.HA_BASE_URL' /data/options.json)
+    echo "Using HA_BASE_URL from /data/options.json"
+else
+    echo "Using HA_BASE_URL from environment variable"
+fi
+
 # Start the FastAPI application using Gunicorn with a single Uvicorn worker
 # The app is located at /app/app.py (module app, FastAPI instance 'app')
 # It will listen on 0.0.0.0:8099 as defined in config.json ports and Dockerfile EXPOSE
