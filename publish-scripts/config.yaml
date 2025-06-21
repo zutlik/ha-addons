@@ -17,5 +17,5 @@ options:
   HOME_ASSISTANT_TOKEN: "your_home_assistant_token_here"
 schema:
   HOME_ASSISTANT_TOKEN: "str"
-# Comment out image for development - Home Assistant will build locally
-# image: "m3nadav/zutlik:latest"
+restart_policy: unless-stopped
+image: "m3nadav/zutlik:latest"
