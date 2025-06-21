@@ -53,6 +53,7 @@ def create_app(settings: Settings = None) -> FastAPI:
         ngrok_manager = get_ngrok_manager()
         if ngrok_manager:
             ngrok_manager.stop_tunnel()
+            ngrok_manager.clear_all_tunnels()
         logger.info("🔄 Publish Scripts add-on shutting down...")
 
     app = FastAPI(
@@ -86,7 +87,7 @@ def validate_startup_configuration():
     # Check Home Assistant token
     ha_client = get_ha_client()
     if not ha_client.is_configured():
-        logger.error("❌ HOME_ASSISTANT_TOKEN not configured!")
+        logger.error("❌ HASSIO_TOKEN not configured!")
         logger.error("   Please configure the add-on with a valid Home Assistant token.")
         logger.error("   Go to Settings → Add-ons → Publish Scripts → Configuration")
         sys.exit(1)

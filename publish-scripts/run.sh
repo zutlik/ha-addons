@@ -10,18 +10,18 @@ if [ -f ".env" ]; then
     export $(cat .env | grep -v '^#' | xargs)
 fi
 
-# Check if HOME_ASSISTANT_TOKEN is already set as an environment variable
+# Check if HASSIO_TOKEN is already set as an environment variable
 # If not, try to get it from Home Assistant Supervisor options.json
-if [ -z "$HOME_ASSISTANT_TOKEN" ]; then
+if [ -z "$HASSIO_TOKEN" ]; then
     # Home Assistant Supervisor usually provides options.json in /data/
     # Use jq to parse the JSON and extract the token.
     # If jq is not available in the base image, you might need to add it to the Dockerfile
     # (e.g., RUN apt-get update && apt-get install -y jq)
-    export HOME_ASSISTANT_TOKEN=$(jq --raw-output '.HOME_ASSISTANT_TOKEN' /data/options.json)
+    export HASSIO_TOKEN=$(jq --raw-output '.HASSIO_TOKEN' /data/options.json)
     echo "Using Home Assistant token from /data/options.json"
-    echo "HOME_ASSISTANT_TOKEN: ${HOME_ASSISTANT_TOKEN:0:10}..."
+    echo "HASSIO_TOKEN: ${HASSIO_TOKEN:0:10}..."
 else
-    echo "Using HOME_ASSISTANT_TOKEN from environment variable"
+    echo "Using HASSIO_TOKEN from environment variable"
 fi
 
 # Check if NGROK_AUTH_TOKEN is already set as an environment variable

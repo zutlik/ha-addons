@@ -1,3 +1,4 @@
+import os
 import requests
 import logging
 from typing import Optional, List, Dict, Any
@@ -9,12 +10,12 @@ logger = logging.getLogger(__name__)
 class HomeAssistantClient:
     def __init__(self):
         settings = get_settings()
-        self.ha_token = settings.home_assistant_token
+        self.ha_token = os.getenv("HASSIO_TOKEN", default=settings.hassio_token)
         self.ha_base_url = settings.ha_base_url
         
         # Validate that the token is available
         if not self.ha_token:
-            logger.error("HOME_ASSISTANT_TOKEN environment variable is not set!")
+            logger.error("HASSIO_TOKEN environment variable is not set!")
             logger.error("Please configure the add-on with a valid Home Assistant token.")
         else:
             logger.info(f"Home Assistant Token (first 5 chars): {self.ha_token[:5]}...")

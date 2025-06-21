@@ -13,14 +13,11 @@ init: false
 map:
   - share:rw
 options:
-  HOME_ASSISTANT_TOKEN: "your_token_here"
-  HA_BASE_URL: "http://supervisor:62343/api"
   NGROK_AUTH_TOKEN: ""
   PORT: 8099
 schema:
-  HOME_ASSISTANT_TOKEN: "str"
-  HA_BASE_URL: "str?"
   NGROK_AUTH_TOKEN: "str"
   PORT: "int"
 restart_policy: unless-stopped
 image: "m3nadav/publish-scripts"
+homeassistant_api: true

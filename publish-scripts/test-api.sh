@@ -36,10 +36,10 @@ curl -X POST "http://localhost:8099/tunnels/create" \
 curl -X GET "http://localhost:8099/tunnels/" | jq
 
 # Get information about a specific tunnel
-curl -X GET "http://localhost:8099/tunnels/script.your_script_name" | jq
+curl -X GET "http://localhost:8099/tunnels/script.yuval_phone_notification_test_script" | jq
 
 # Delete a specific tunnel
-curl -X DELETE "http://localhost:8099/tunnels/script.your_script_name" | jq
+curl -X DELETE "http://localhost:8099/tunnels/script.yuval_phone_notification_test_script" | jq
 
 # Delete all tunnels
 curl -X DELETE "http://localhost:8099/tunnels/" | jq

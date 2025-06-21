@@ -212,6 +212,9 @@ async def delete_all_tunnels():
         # Stop all tunnels
         ngrok_manager.stop_tunnel()
         
+        # Clear all tunnels from the active tunnels list
+        ngrok_manager.clear_all_tunnels()
+        
         logger.info(f"✅ Deleted {tunnel_count} active tunnels")
         
         return {

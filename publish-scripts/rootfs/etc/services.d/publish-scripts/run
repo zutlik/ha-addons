@@ -6,10 +6,10 @@
 
 # Get the Home Assistant token from config
 declare token
-token=$(bashio::config 'HOME_ASSISTANT_TOKEN')
+token=$(bashio::config 'HASSIO_TOKEN')
 
 # Export the token for the application
-export HOME_ASSISTANT_TOKEN="${token}"
+export HASSIO_TOKEN="${token}"
 
 # Log that we're starting the service
 bashio::log.info "Starting Publish Scripts add-on..."
