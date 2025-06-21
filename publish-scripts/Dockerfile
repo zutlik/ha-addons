@@ -30,7 +30,7 @@ RUN if [ "$TARGETARCH" = "i386" ]; then \
 # Final stage
 FROM python:3.13.3-slim
 
-# Install runtime dependencies and ngrok
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     jq \
@@ -40,16 +40,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install ngrok binary for non-i386 architectures (i386 uses Python package)
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" != "i386" ]; then \
+        echo "Installing ngrok binary for $TARGETARCH"; \
         case "$TARGETARCH" in \
-            amd64) ARCH=amd64 ;; \
-            arm64) ARCH=arm64 ;; \
-            arm) ARCH=arm ;; \
-            *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
-        esac \
-        && wget -q "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${ARCH}.tgz" \
-        && tar -xzf "ngrok-v3-stable-linux-${ARCH}.tgz" \
-        && mv ngrok /usr/local/bin/ \
-        && rm "ngrok-v3-stable-linux-${ARCH}.tgz"; \
+            amd64) \
+                wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
+                && tar -xzf ngrok-v3-stable-linux-amd64.tgz \
+                && mv ngrok /usr/local/bin/ \
+                && rm ngrok-v3-stable-linux-amd64.tgz \
+                ;; \
+            arm64) \
+                wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz \
+                && tar -xzf ngrok-v3-stable-linux-arm64.tgz \
+                && mv ngrok /usr/local/bin/ \
+                && rm ngrok-v3-stable-linux-arm64.tgz \
+                ;; \
+            arm) \
+                wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz \
+                && tar -xzf ngrok-v3-stable-linux-arm.tgz \
+                && mv ngrok /usr/local/bin/ \
+                && rm ngrok-v3-stable-linux-arm.tgz \
+                ;; \
+            *) \
+                echo "Unsupported architecture: $TARGETARCH" \
+                && exit 1 \
+                ;; \
+        esac; \
     else \
         echo "Skipping ngrok binary installation for i386 (using Python package)"; \
     fi
