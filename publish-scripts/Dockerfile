@@ -19,6 +19,19 @@ COPY app/requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+# Web UI builder stage
+FROM node:18-alpine as web-builder
+
+# Set working directory for web build
+WORKDIR /web
+
+# Copy web UI source
+COPY web/package*.json ./
+COPY web/ ./
+
+# Install dependencies and build
+RUN npm ci && npm run build
+
 # Final stage
 FROM python:3.11-slim
 
@@ -38,6 +51,9 @@ COPY --from=builder /root/.local /root/.local
 
 # Copy the application code
 COPY app/ .
+
+# Copy the built web UI from web-builder stage
+COPY --from=web-builder /web/dist ./static
 
 # Copy the run script
 COPY run.sh /usr/bin/run.sh

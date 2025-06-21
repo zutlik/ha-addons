@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Publish HA scripts</title>
+    <meta name="description" content="Home Assistant Script Manager - Generate and manage public URLs for your Home Assistant scripts" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./src/styles.css">
+  </head>
+
+  <body>
+    <div class="container">
+      <header class="header">
+        <h1 class="header-title">Script Manager</h1>
+        <p class="header-subtitle">Generate and manage public URLs for your Home Assistant scripts</p>
+        
+        <div class="search-container">
+          <input 
+            type="text" 
+            id="search-input" 
+            class="search-input" 
+            placeholder="Search scripts by name or ID..."
+            autocomplete="off"
+          />
+        </div>
+      </header>
+
+      <main class="main">
+        <div id="scripts-container" class="scripts-grid">
+          <!-- Script cards will be dynamically generated here -->
+        </div>
+      </main>
+    </div>
+
+    <script type="module" src="./src/script.js"></script>
+  </body>
+</html>

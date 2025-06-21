@@ -7,7 +7,7 @@ from services import get_service_manager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["health"])
+router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("/")
 async def root():
