@@ -22,4 +22,4 @@ schema:
   HA_BASE_URL: "str?"
   NGROK_AUTH_TOKEN: "str"
 restart_policy: unless-stopped
-image: "m3nadav/zutlik:latest"
+image: "m3nadav/zutlik"
