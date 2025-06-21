@@ -1,417 +1,248 @@
 # app/app.py
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
 import os
-import asyncio
-import requests
-import subprocess
-import time
-import json
-import threading
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-from typing import Optional
 import logging
+import asyncio
+from typing import Dict, Any, Optional
+import json
 
-# Set up basic logging for the add-on
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app_logger = logging.getLogger(__name__)
+from ngrok_manager import NgrokManager
+from ha_client import HomeAssistantClient
+from models import ScriptRequest, ScriptResponse, TunnelResponse
 
-app = FastAPI()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Get ngrok token from environment variables
-# This will be injected by run.sh from add-on options
-NGROK_TOKEN = os.environ.get('NGROK_AUTH_TOKEN')
+app = FastAPI(title="Home Assistant Script Publisher", version="1.0.0")
 
-# Get the Home Assistant token from environment variables
-# This will be injected by run.sh from add-on options
-HA_TOKEN = os.environ.get('HOME_ASSISTANT_TOKEN')
+# Initialize managers
+ngrok_manager = NgrokManager()
+ha_client = HomeAssistantClient()
 
-# Get the Home Assistant base URL from environment variables
-# Default to supervisor core API if not set
-HA_BASE_URL = os.environ.get('HA_BASE_URL', 'http://supervisor/core/api')
-
-# Fix the base URL if it contains /core/api (remove /core)
-if HA_BASE_URL and '/core/api' in HA_BASE_URL:
-    HA_BASE_URL = HA_BASE_URL.replace('/core/api', '/api')
-
-# Validate that the tokens are available
-if not HA_TOKEN:
-    app_logger.error("HOME_ASSISTANT_TOKEN environment variable is not set!")
-    app_logger.error("Please configure the add-on with a valid Home Assistant token.")
-else:
-    app_logger.info(f"Home Assistant Token (first 5 chars): {HA_TOKEN[:5]}...")
-
-if not NGROK_TOKEN:
-    app_logger.error("NGROK_AUTH_TOKEN environment variable is not set!")
-    app_logger.error("Please configure the add-on with a valid ngrok authentication token.")
-else:
-    app_logger.info(f"ngrok Token (first 5 chars): {NGROK_TOKEN[:5]}...")
-
-app_logger.info(f"Home Assistant Base URL: {HA_BASE_URL}")
-app_logger.info(f"ngrok Token configured: {bool(NGROK_TOKEN)}")
-
-# Global variable to store active tunnel info
-active_tunnel_info = None
-ngrok_process = None
-
-def start_ngrok_tunnel_subprocess(port, token):
-    """
-    Start ngrok tunnel using subprocess (command line).
-    This is more reliable than the Python SDK.
-    """
-    global ngrok_process
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the application on startup."""
+    logger.info("Starting Home Assistant Script Publisher...")
     
-    try:
-        # Kill any existing ngrok processes
-        subprocess.run(['pkill', '-f', 'ngrok'], capture_output=True)
-        time.sleep(1)
-        
-        # Start ngrok tunnel
-        cmd = ['ngrok', 'http', str(port), '--log=stdout']
-        if token:
-            cmd.extend(['--authtoken', token])
-        
-        ngrok_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Wait a moment for ngrok to start
-        time.sleep(3)
-        
-        # Get tunnel URL from ngrok API
-        try:
-            response = requests.get('http://localhost:4040/api/tunnels', timeout=5)
-            if response.status_code == 200:
-                tunnels = response.json()['tunnels']
-                if tunnels:
-                    return tunnels[0]['public_url']
-                else:
-                    raise Exception("No tunnels found")
-            else:
-                raise Exception(f"Failed to get tunnel info: {response.status_code}")
-        except Exception as e:
-            # If API fails, try to parse from ngrok output
-            if ngrok_process.poll() is None:
-                # Process is still running, try to get URL from logs
-                time.sleep(2)
-                try:
-                    response = requests.get('http://localhost:4040/api/tunnels', timeout=5)
-                    if response.status_code == 200:
-                        tunnels = response.json()['tunnels']
-                        if tunnels:
-                            return tunnels[0]['public_url']
-                except:
-                    pass
-            
-            raise Exception(f"Failed to get tunnel URL: {e}")
-            
-    except Exception as e:
-        if ngrok_process:
-            ngrok_process.terminate()
-            ngrok_process = None
-        raise e
-
-def stop_ngrok_tunnel():
-    """
-    Stop the active ngrok tunnel.
-    """
-    global ngrok_process, active_tunnel_info
+    # Validate configuration
+    if not ngrok_manager.ngrok_token:
+        logger.error("NGROK_AUTH_TOKEN not configured!")
+        logger.error("Please configure the add-on with a valid ngrok authentication token.")
     
-    try:
-        if ngrok_process:
-            ngrok_process.terminate()
-            ngrok_process.wait(timeout=5)
-            ngrok_process = None
-        
-        # Also kill any ngrok processes
-        subprocess.run(['pkill', '-f', 'ngrok'], capture_output=True)
-        
-        active_tunnel_info = None
-        return True
-    except Exception as e:
-        app_logger.error(f"Failed to stop ngrok tunnel: {e}")
-        return False
-
-# Pydantic model for tunnel creation request
-class TunnelRequest(BaseModel):
-    port: int = 8099  # Default to the app's port
-    name: str = "publish-scripts-tunnel"
-    script_id: Optional[str] = None  # Optional script ID to run via the tunnel
-
-# Pydantic model for tunnel response
-class TunnelResponse(BaseModel):
-    success: bool
-    tunnel_url: Optional[str] = None
-    error: Optional[str] = None
-    note: Optional[str] = None
-
-# Pydantic model for script execution response
-class ScriptResponse(BaseModel):
-    success: bool
-    message: str
-    script_id: str
-    error: Optional[str] = None
-
-class StartNgrokTunnelRequest(BaseModel):
-    script_id: str
-    port: int = 8099
-    name: str = "publish-scripts-tunnel"
-
-class StopNgrokTunnelRequest(BaseModel):
-    script_id: str
-
-def call_home_assistant_api(service: str, data: Optional[dict] = None) -> dict:
-    """
-    Make a call to the Home Assistant API to execute services.
-    """
-    if not HA_TOKEN:
-        raise Exception("Home Assistant token not configured")
-    
-    headers = {
-        "Authorization": f"Bearer {HA_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = data or {}
-    
-    url = f"{HA_BASE_URL}/services/{service}"
-    app_logger.info(f"Calling Home Assistant API: {url}")
-    app_logger.info(f"Payload: {payload}")
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        app_logger.error(f"Home Assistant API call failed: {e}")
-        raise Exception(f"Failed to call Home Assistant API: {e}")
-
-def run_ha_script(script_id: str) -> dict:
-    """
-    Execute a Home Assistant script by its entity ID.
-    """
-    app_logger.info(f"Executing Home Assistant script: {script_id}")
-    
-    # Call the script.turn_on service with the script entity ID
-    payload = {"entity_id": script_id}
-    return call_home_assistant_api("script/turn_on", payload)
+    if not ha_client.is_configured():
+        logger.error("Home Assistant configuration not found!")
+        logger.error("Please configure the add-on with Home Assistant URL and token.")
 
 @app.get("/")
-async def read_root():
-    """
-    A simple root endpoint to confirm the FastAPI server is running.
-    """
-    app_logger.info("Root endpoint called.")
+async def root():
+    """Root endpoint with basic information."""
     return {
-        "message": "Hello from Publish Scripts Add-on!",
-        "token_configured": bool(HA_TOKEN),
-        "ha_base_url": HA_BASE_URL,
-        "ngrok_configured": bool(NGROK_TOKEN),
-        "endpoints": {
-            "run_script": "/api/run_script/{script_id}",
-            "start_tunnel": "/api/start_ngrok_tunnel",
-            "list_tunnels": "/api/ngrok_tunnels",
-            "stop_tunnel": "/api/stop_ngrok_tunnel",
-            "public_script": "/run_script/{script_id}"
-        }
+        "message": "Home Assistant Script Publisher",
+        "version": "1.0.0",
+        "status": "running",
+        "ngrok_configured": bool(ngrok_manager.ngrok_token),
+        "ha_configured": ha_client.is_configured()
     }
 
-@app.get("/api/status")
-async def get_status():
-    """
-    Get the current status of the add-on configuration.
-    """
-    return {
-        "token_configured": bool(HA_TOKEN),
-        "ha_base_url": HA_BASE_URL,
-        "ngrok_configured": bool(NGROK_TOKEN)
-    }
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
 
-@app.get("/api/run_script/{script_id}", response_model=ScriptResponse)
-async def execute_script(script_id: str):
+@app.post("/create_tunnel", response_model=TunnelResponse)
+async def create_tunnel(script_request: ScriptRequest, background_tasks: BackgroundTasks):
     """
-    Execute a Home Assistant script by its entity ID.
+    Create a new ngrok tunnel for a specific script.
     """
-    app_logger.info(f"Executing script: {script_id}")
-    
     try:
-        result = run_ha_script(script_id)
+        script_id = script_request.script_id
+        
+        # Check if tunnel already exists for this script
+        if ngrok_manager.is_tunnel_active_for_script(script_id):
+            existing_tunnel = ngrok_manager.get_tunnel_by_script_id(script_id)
+            if existing_tunnel:
+                return TunnelResponse(
+                    success=True,
+                    message=f"Tunnel already exists for script {script_id}",
+                    tunnel_url=existing_tunnel.get('tunnel_url'),
+                    complete_url=existing_tunnel.get('complete_url'),
+                    script_id=script_id
+                )
+        
+        # Validate script exists in Home Assistant
+        if not await ha_client.script_exists_async(script_id):
+            raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found in Home Assistant")
+        
+        # Start ngrok tunnel
+        tunnel_url = ngrok_manager.start_tunnel_subprocess(8000, ngrok_manager.ngrok_token)
+        
+        if not tunnel_url:
+            raise HTTPException(status_code=500, detail="Failed to create ngrok tunnel")
+        
+        # Store tunnel information
+        tunnel_info = {
+            'tunnel_url': tunnel_url,
+            'script_id': script_id,
+            'created_at': asyncio.get_event_loop().time()
+        }
+        
+        ngrok_manager.add_tunnel(script_id, tunnel_info)
+        
+        # Get the complete URL
+        complete_url = ngrok_manager.get_complete_url_for_script(script_id)
+        
+        logger.info(f"Created tunnel for script {script_id}: {tunnel_url}")
+        logger.info(f"Complete URL: {complete_url}")
+        
+        return TunnelResponse(
+            success=True,
+            message=f"Tunnel created successfully for script {script_id}",
+            tunnel_url=tunnel_url,
+            complete_url=complete_url,
+            script_id=script_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating tunnel: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/run_script/{script_id}")
+async def run_script(script_id: str):
+    """
+    Execute a script via the tunnel.
+    This endpoint is accessible through the ngrok tunnel.
+    """
+    try:
+        # Validate that this script has an active tunnel
+        if not ngrok_manager.is_tunnel_active_for_script(script_id):
+            raise HTTPException(status_code=404, detail=f"No active tunnel found for script {script_id}")
+        
+        # Execute the script in Home Assistant
+        result = await ha_client.run_script_async(script_id)
         
         return ScriptResponse(
             success=True,
             message=f"Script {script_id} executed successfully",
-            script_id=script_id
-        )
-    except Exception as e:
-        app_logger.error(f"Failed to execute script {script_id}: {e}")
-        return ScriptResponse(
-            success=False,
-            message=f"Failed to execute script {script_id}",
             script_id=script_id,
-            error=str(e)
+            result=result
         )
+        
+    except Exception as e:
+        logger.error(f"Error running script {script_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/start_ngrok_tunnel", response_model=TunnelResponse)
-async def start_ngrok_tunnel_post(req: StartNgrokTunnelRequest):
+@app.get("/tunnels")
+async def get_tunnels():
     """
-    Create an ngrok tunnel to expose the Home Assistant script execution endpoint.
-    Uses subprocess to run ngrok command line tool. Accepts POST with JSON body.
+    Get information about all active tunnels.
     """
-    global active_tunnel_info
+    tunnels = ngrok_manager.get_active_tunnels()
     
-    port = req.port
-    name = req.name
-    script_id = req.script_id
-    
-    app_logger.info(f"Starting ngrok tunnel for port {port}")
-    
-    try:
-        # Check if we already have an active tunnel
-        if active_tunnel_info and active_tunnel_info.get('tunnel_url'):
-            tunnel_url = active_tunnel_info.get('tunnel_url')
-            # Create the complete script execution URL
-            complete_url = f"{tunnel_url}/run_script/{script_id}"
-            return TunnelResponse(
-                success=True,
-                tunnel_url=complete_url,
-                note="Using existing tunnel"
-            )
-        
-        # Start ngrok tunnel using subprocess
-        tunnel_url = start_ngrok_tunnel_subprocess(port, NGROK_TOKEN)
-        
-        app_logger.info(f"ngrok tunnel created successfully: {tunnel_url}")
-        
-        # Store tunnel info globally
-        active_tunnel_info = {
-            'tunnel_url': tunnel_url,
-            'port': port,
+    # Format response with complete URLs
+    tunnel_list = []
+    for script_id, tunnel_info in tunnels.items():
+        tunnel_list.append({
             'script_id': script_id,
-            'created_at': time.time()
-        }
-        
-        # Create the complete script execution URL
-        complete_url = f"{tunnel_url}/run_script/{script_id}"
-        app_logger.info(f"Complete script execution URL: {complete_url}")
-        
-        # Free tier notes
-        free_tier_note = "Free tier: URL changes on restart, 8-hour session limit"
-        
-        return TunnelResponse(
-            success=True,
-            tunnel_url=complete_url,
-            note=free_tier_note
-        )
-        
-    except Exception as e:
-        error_msg = f"Failed to create ngrok tunnel: {str(e)}"
-        app_logger.error(error_msg)
-        return TunnelResponse(
-            success=False,
-            error=error_msg,
-            note="Free tier limitations may apply"
-        )
-
-@app.get("/api/ngrok_tunnels")
-async def list_ngrok_tunnels():
-    """
-    List all active ngrok tunnels.
-    """
-    global active_tunnel_info
+            'tunnel_url': tunnel_info.get('tunnel_url'),
+            'complete_url': tunnel_info.get('complete_url'),
+            'created_at': tunnel_info.get('created_at')
+        })
     
-    try:
-        tunnel_list = []
-        
-        if active_tunnel_info and active_tunnel_info.get('tunnel_url'):
-            tunnel_info = {
-                "url": active_tunnel_info['tunnel_url'],
-                "name": "publish-scripts-tunnel",
-                "proto": "https",
-                "addr": f"localhost:{active_tunnel_info.get('port', 8099)}",
-                "status": "active",
-                "script_id": active_tunnel_info.get('script_id'),
-                "created_at": active_tunnel_info.get('created_at', 0)
-            }
-            tunnel_list.append(tunnel_info)
-        
-        return {
-            "success": True,
-            "tunnels": tunnel_list,
-            "count": len(tunnel_list),
-            "note": "Free tier: Limited concurrent tunnels"
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list tunnels: {str(e)}")
+    return {
+        "tunnels": tunnel_list,
+        "count": len(tunnel_list)
+    }
 
-@app.post("/api/stop_ngrok_tunnel")
-async def stop_ngrok_tunnel_endpoint(req: StopNgrokTunnelRequest):
+@app.get("/tunnel/{script_id}")
+async def get_tunnel(script_id: str):
     """
-    Stop the active ngrok tunnel if it matches the provided script_id.
+    Get information about a specific tunnel.
     """
-    global active_tunnel_info
+    tunnel_info = ngrok_manager.get_tunnel_by_script_id(script_id)
     
-    try:
-        # Check if there's an active tunnel and if the script_id matches
-        if not active_tunnel_info:
-            return {
-                "success": False,
-                "message": "No active ngrok tunnel found"
-            }
-        
-        active_script_id = active_tunnel_info.get('script_id')
-        if active_script_id != req.script_id:
-            return {
-                "success": False,
-                "message": f"Script ID mismatch. Active tunnel is for script '{active_script_id}', but requested to stop for script '{req.script_id}'"
-            }
-        
-        success = stop_ngrok_tunnel()
-        
-        if success:
-            return {
-                "success": True,
-                "message": f"ngrok tunnel for script '{req.script_id}' stopped successfully"
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Failed to stop ngrok tunnel"
-            }
-            
-    except Exception as e:
-        error_msg = f"Failed to stop ngrok tunnel: {str(e)}"
-        app_logger.error(error_msg)
-        return {
-            "success": False,
-            "message": error_msg
-        }
+    if not tunnel_info:
+        raise HTTPException(status_code=404, detail=f"No tunnel found for script {script_id}")
+    
+    return {
+        'script_id': script_id,
+        'tunnel_url': tunnel_info.get('tunnel_url'),
+        'complete_url': tunnel_info.get('complete_url'),
+        'created_at': tunnel_info.get('created_at')
+    }
 
-@app.get("/run_script/{script_id}")
-async def public_script_execution(script_id: str):
+@app.delete("/tunnel/{script_id}")
+async def delete_tunnel(script_id: str):
     """
-    Public endpoint to execute a Home Assistant script. Intended for ngrok tunnel exposure.
+    Delete a specific tunnel.
     """
-    app_logger.info(f"[public_script_execution] Request received. Executing script: {script_id}")
-    try:
-        result = run_ha_script(script_id)
-        return {
-            "success": True,
-            "message": f"Script {script_id} executed successfully via ngrok tunnel.",
-            "script_id": script_id
-        }
-    except Exception as e:
-        app_logger.error(f"[public_script_execution] Failed to execute script {script_id}: {e}")
-        return {
-            "success": False,
-            "message": f"Failed to execute script {script_id}: {str(e)}",
-            "script_id": script_id
-        }
+    tunnel_info = ngrok_manager.get_tunnel_by_script_id(script_id)
+    
+    if not tunnel_info:
+        raise HTTPException(status_code=404, detail=f"No tunnel found for script {script_id}")
+    
+    # Remove from active tunnels
+    ngrok_manager.remove_tunnel(script_id)
+    
+    # If this was the last tunnel, stop ngrok process
+    if ngrok_manager.get_tunnel_count() == 0:
+        ngrok_manager.stop_tunnel()
+    
+    return {
+        "success": True,
+        "message": f"Tunnel for script {script_id} deleted successfully"
+    }
 
-# You will add more endpoints here in later tasks, like:
-# @app.get("/api/list_ha_scripts")
-# async def list_ha_scripts():
-#     # ... implementation to list HA scripts ...
-#     pass
+@app.delete("/tunnels")
+async def delete_all_tunnels():
+    """
+    Delete all active tunnels.
+    """
+    tunnel_count = ngrok_manager.get_tunnel_count()
+    
+    # Clear all tunnels
+    ngrok_manager.clear_all_tunnels()
+    
+    # Stop ngrok process
+    ngrok_manager.stop_tunnel()
+    
+    return {
+        "success": True,
+        "message": f"All {tunnel_count} tunnels deleted successfully"
+    }
+
+@app.get("/scripts")
+async def get_scripts():
+    """
+    Get all available scripts from Home Assistant.
+    """
+    try:
+        scripts = await ha_client.get_scripts_async()
+        return {"scripts": scripts}
+    except Exception as e:
+        logger.error(f"Error getting scripts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/script/{script_id}")
+async def get_script(script_id: str):
+    """
+    Get information about a specific script.
+    """
+    try:
+        script_info = await ha_client.get_script_async(script_id)
+        if not script_info:
+            raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found")
+        return script_info
+    except Exception as e:
+        logger.error(f"Error getting script {script_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler."""
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
