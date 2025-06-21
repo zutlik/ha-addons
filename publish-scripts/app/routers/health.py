@@ -1,8 +1,9 @@
+import os
+import sys
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
 import logging
 
-from services import get_service_manager, get_ha_client, get_ngrok_manager
+from services import get_service_manager
 
 logger = logging.getLogger(__name__)
 
@@ -51,3 +52,11 @@ async def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail="Health check failed") 
+
+@router.get("/debug-paths")
+def debug_paths():
+    return {
+        "cwd": os.getcwd(),
+        "sys_path": sys.path,
+        "files": os.listdir(".")
+    } 
