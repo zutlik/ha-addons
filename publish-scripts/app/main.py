@@ -1,6 +1,7 @@
 import sys
 import os
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 # Add the current directory (app folder) to Python path to ensure imports work
 current_dir = Path(__file__).parent
@@ -22,10 +23,11 @@ from routers import health, tunnels, scripts
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def create_app(settings: Settings = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = get_settings() 
 
+    @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Lifespan event handler for proper startup and shutdown."""
         # Get the service manager
@@ -53,6 +55,7 @@ def create_app(settings: Settings = None) -> FastAPI:
         # Cleanup on shutdown
         ngrok_manager = get_ngrok_manager()
         if ngrok_manager:
+            ngrok_manager.stop_cleanup_task()
             ngrok_manager.stop_tunnel()
             ngrok_manager.clear_all_tunnels()
         logger.info("🔄 Publish Scripts add-on shutting down...")
@@ -126,7 +129,7 @@ def test_home_assistant_connectivity():
 
 # For production:
 app = create_app()
-app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
+app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..", "web"), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn

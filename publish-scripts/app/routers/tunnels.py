@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 import logging
 import asyncio
 
-from models import ScriptRequest, TunnelResponse
+from models import CreateTunnelRequest, TunnelResponse
 from services import get_ha_client, get_ngrok_manager, get_settings
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tunnels", tags=["tunnels"])
 
 @router.post("/create", response_model=TunnelResponse)
-async def create_tunnel(script_request: ScriptRequest, background_tasks: BackgroundTasks):
+async def create_tunnel(request: CreateTunnelRequest, background_tasks: BackgroundTasks):
     """
     Create a new ngrok tunnel for a specific script.
     """
@@ -19,6 +19,9 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
         ha_client = get_ha_client()
         settings = get_settings()
         
+        if not settings:
+            raise HTTPException(status_code=500, detail="Settings not available.")
+        
         # Runtime validation
         if not ngrok_manager.is_configured():
             raise HTTPException(
@@ -26,7 +29,7 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
                 detail="Ngrok not configured. Please add NGROK_AUTH_TOKEN to add-on configuration."
             )
         
-        script_id = script_request.script_id
+        script_id = request.script_id
         
         # Check if tunnel already exists for this script
         if ngrok_manager.is_tunnel_active_for_script(script_id):
@@ -63,7 +66,7 @@ async def create_tunnel(script_request: ScriptRequest, background_tasks: Backgro
             'created_at': asyncio.get_event_loop().time()
         }
         
-        ngrok_manager.add_tunnel(script_id, tunnel_info)
+        ngrok_manager.add_tunnel(script_id, tunnel_info, timeout_minutes=request.timeout_minutes)
         
         # Get the complete URL
         complete_url = ngrok_manager.get_complete_url_for_script(script_id)
@@ -107,7 +110,8 @@ async def get_tunnels():
                 'script_id': script_id,
                 'tunnel_url': tunnel_info.get('tunnel_url'),
                 'complete_url': tunnel_info.get('complete_url'),
-                'created_at': tunnel_info.get('created_at')
+                'created_at': tunnel_info.get('created_at'),
+                'expiration_time': tunnel_info.get('expiration_time')
             })
         
         return {
@@ -142,7 +146,8 @@ async def get_tunnel(script_id: str):
             'script_id': script_id,
             'tunnel_url': tunnel_info.get('tunnel_url'),
             'complete_url': tunnel_info.get('complete_url'),
-            'created_at': tunnel_info.get('created_at')
+            'created_at': tunnel_info.get('created_at'),
+            'expiration_time': tunnel_info.get('expiration_time')
         }
         
     except HTTPException:
