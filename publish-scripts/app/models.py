@@ -6,10 +6,9 @@ class ScriptRequest(BaseModel):
     script_id: str
 
 # Pydantic model for tunnel creation request
-class TunnelRequest(BaseModel):
-    port: int = 8099  # Default to the app's port
-    name: str = "publish-scripts-tunnel"
-    script_id: Optional[str] = None  # Optional script ID to run via the tunnel
+class CreateTunnelRequest(BaseModel):
+    script_id: str
+    timeout_minutes: Optional[int] = None
 
 # Pydantic model for tunnel response
 class TunnelResponse(BaseModel):
