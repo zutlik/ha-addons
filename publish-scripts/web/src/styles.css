@@ -264,6 +264,21 @@ body {
   box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
 }
 
+.btn-primary:disabled {
+  background: #64748b;
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.6;
+  border-color: #64748b;
+}
+
+.btn-primary:disabled:hover {
+  background: #64748b;
+  color: #94a3b8;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn-secondary {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: white;
@@ -317,7 +332,7 @@ body {
 /* Loading state */
 .btn.loading {
   position: relative;
-  color: transparent;
+  color: transparent !important;
 }
 
 .btn.loading::after {
@@ -325,19 +340,18 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
   width: 16px;
   height: 16px;
+  margin: -8px 0 0 -8px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top: 2px solid white;
+  border-top-color: #ffffff;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* Responsive design */
@@ -413,16 +427,19 @@ body {
   background: transparent;
   color: #fbbf24;
   border: 1px solid #fbbf24;
-  margin-left: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition: all 0.2s ease;
+  min-width: auto;
+  margin: 0;
 }
+
 .btn-pin:hover {
   background: #fbbf24;
   color: #1e293b;
+  transform: scale(1.05);
 }
 
 /* Pinned card */
@@ -443,4 +460,50 @@ body {
   padding: 2px 8px;
   border-radius: 6px;
   z-index: 2;
+}
+
+/* Active tunnel indicator */
+.script-card.has-active-tunnel {
+  border: 2px solid #10b981;
+  box-shadow: 0 0 10px 2px #10b98133;
+}
+
+.script-card.has-active-tunnel::before {
+  content: '🔗 Active Tunnel';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #10b981;
+  color: white;
+  font-size: 0.85rem;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 6px;
+  z-index: 2;
+}
+
+/* Retry indicator */
+.retry-indicator {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #f59e0b;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }

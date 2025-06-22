@@ -32,6 +32,9 @@ COPY web/ ./
 # Install dependencies and build
 RUN npm ci && npm run build
 
+# Copy src directory to dist so script.js and styles.css are available
+RUN cp -r src dist/
+
 # Final stage
 FROM python:3.11-slim
 

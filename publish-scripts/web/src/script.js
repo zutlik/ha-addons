@@ -3,6 +3,7 @@
 // State management
 let scriptsData = [];
 let filteredScripts = [];
+let activeTunnelScriptId = null; // Track which script has the active tunnel
 
 // DOM utility functions
 function $(selector) {
@@ -213,13 +214,17 @@ function showSuccess(message) {
 // Pinning logic
 function getPinnedScripts() {
     try {
-        return JSON.parse(localStorage.getItem('pinnedScripts') || '[]');
-    } catch {
+        const pinned = localStorage.getItem('pinnedScripts');
+        console.log('Retrieved from localStorage:', pinned);
+        return JSON.parse(pinned || '[]');
+    } catch(e) {
+        console.error('Error parsing pinned scripts from localStorage', e);
         return [];
     }
 }
 
 function setPinnedScripts(pinned) {
+    console.log('Saving to localStorage:', JSON.stringify(pinned));
     localStorage.setItem('pinnedScripts', JSON.stringify(pinned));
 }
 
@@ -228,19 +233,29 @@ function isScriptPinned(scriptId) {
 }
 
 function pinScript(scriptId) {
+    console.log('Attempting to pin script:', scriptId);
     const pinned = getPinnedScripts();
     if (!pinned.includes(scriptId)) {
         pinned.push(scriptId);
         setPinnedScripts(pinned);
+        console.log('Pinning successful, re-rendering all scripts.');
         renderScripts();
+    } else {
+        console.log('Script already pinned.');
     }
 }
 
 function unpinScript(scriptId) {
+    console.log('Attempting to unpin script:', scriptId);
     let pinned = getPinnedScripts();
-    pinned = pinned.filter(id => id !== scriptId);
-    setPinnedScripts(pinned);
-    renderScripts();
+    if (pinned.includes(scriptId)) {
+        pinned = pinned.filter(id => id !== scriptId);
+        setPinnedScripts(pinned);
+        console.log('Unpinning successful, re-rendering all scripts.');
+        renderScripts();
+    } else {
+        console.log('Script not found in pinned list.');
+    }
 }
 
 // Create URL section HTML
@@ -272,139 +287,263 @@ function createUrlSection(script, tunnelInfo) {
     `;
 }
 
+// Single tunnel enforcement
+function setActiveTunnel(scriptId) {
+    activeTunnelScriptId = scriptId;
+    updateShareButtons();
+}
+
+function clearActiveTunnel() {
+    activeTunnelScriptId = null;
+    updateShareButtons();
+}
+
+function updateShareButtons() {
+    // Update all share buttons based on active tunnel state
+    const shareButtons = document.querySelectorAll('.btn-primary');
+    shareButtons.forEach(button => {
+        const scriptId = button.getAttribute('data-script-id');
+        if (activeTunnelScriptId && scriptId !== activeTunnelScriptId) {
+            button.disabled = true;
+            button.textContent = 'Share (Tunnel Active)';
+            button.title = 'Another tunnel is currently active. Revoke it first.';
+        } else {
+            button.disabled = false;
+            button.textContent = 'Share';
+            button.title = 'Create a public URL for this script';
+        }
+    });
+}
+
 // Create script card HTML
 function createScriptCard(script, tunnelInfo) {
     const hasTunnel = tunnelInfo !== null;
     const scriptName = script.name || script.entity_id;
     const scriptState = script.state || 'unknown';
-    
-    // Always show title container with action buttons on the right
-    const titleSection = `
-        <div class="script-title-container">
-            <h3 class="script-name">${scriptName}</h3>
-            <div style="display: flex; gap: 0.75rem;">
-                ${hasTunnel ? `<button class="btn btn-secondary" onclick="revokeUrl('${script.entity_id}', this)">Revoke</button>` : ''}
-                ${!hasTunnel ? `<button class="btn btn-primary" onclick="shareScript('${script.entity_id}', this)">Share</button>` : ''}
-            </div>
-        </div>
-    `;
-    
+    const isPinned = isScriptPinned(script.entity_id);
+    const isLoading = script.isLoading || false;
+
+    let actionButtonHTML;
+    if (isLoading) {
+        actionButtonHTML = `<button class="btn btn-primary loading" disabled>Loading...</button>`;
+    } else if (hasTunnel) {
+        actionButtonHTML = `<button class="btn btn-secondary" onclick="revokeUrl('${script.entity_id}')">Revoke</button>`;
+    } else {
+        const isDisabled = activeTunnelScriptId && activeTunnelScriptId !== script.entity_id;
+        const buttonText = isDisabled ? 'Share (Tunnel Active)' : 'Share';
+        actionButtonHTML = `<button class="btn btn-primary" data-script-id="${script.entity_id}" onclick="shareScript('${script.entity_id}')" ${isDisabled ? 'disabled' : ''}>${buttonText}</button>`;
+    }
+
     const card = createElement('div', 'script-card');
     card.setAttribute('data-script-id', script.entity_id);
+    if (hasTunnel) card.classList.add('has-active-tunnel');
+    if (isPinned) card.classList.add('pinned');
+    
     card.innerHTML = `
-        ${titleSection}
+        <div class="script-title-container">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
+                <button class="btn btn-pin" title="${isPinned ? 'Unpin this script' : 'Pin this script'}" aria-label="${isPinned ? 'Unpin' : 'Pin'}">${isPinned ? '📌' : '📍'}</button>
+                <h3 class="script-name">${scriptName}</h3>
+            </div>
+            <div class="card-actions-container" style="display: flex; gap: 0.75rem;">
+                ${actionButtonHTML}
+            </div>
+        </div>
         <div class="script-id">${script.entity_id}</div>
         <div class="script-state">State: ${scriptState}</div>
         ${createUrlSection(script, tunnelInfo)}
     `;
-    
-    // Pin icon button
-    const isPinned = isScriptPinned(script.entity_id);
-    const pinBtn = createElement('button', 'btn btn-pin', isPinned ? '📌' : '📍');
-    pinBtn.title = isPinned ? 'Unpin this script' : 'Pin this script';
-    pinBtn.setAttribute('aria-label', isPinned ? 'Unpin' : 'Pin');
-    pinBtn.onclick = () => {
-        if (isPinned) {
-            unpinScript(script.entity_id);
-        } else {
-            pinScript(script.entity_id);
-        }
-    };
-    // Add a visual indicator if pinned
-    if (isPinned) {
-        card.classList.add('pinned');
-    }
-    // Place pin icon in the card header/title
-    const titleContainer = card.querySelector('.script-title-container');
-    if (titleContainer) {
-        titleContainer.appendChild(pinBtn);
-    } else {
-        card.prepend(pinBtn);
+
+    // Attach event listener directly - this is more reliable
+    const pinButton = card.querySelector('.btn-pin');
+    if (pinButton) {
+        pinButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isScriptPinned(script.entity_id)) {
+                unpinScript(script.entity_id);
+            } else {
+                pinScript(script.entity_id);
+            }
+        });
     }
     
     return card;
 }
 
-// Share script functionality
-async function shareScript(scriptId, button) {
-    console.log('Sharing script:', scriptId);
+// Show retry indicator
+function showRetryIndicator(message) {
+    // Remove any existing retry indicator
+    const existingIndicator = document.querySelector('.retry-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
     
-    // Add loading state
-    button.classList.add('loading');
-    button.disabled = true;
+    const indicator = document.createElement('div');
+    indicator.className = 'retry-indicator';
+    indicator.textContent = message;
+    document.body.appendChild(indicator);
     
-    try {
-        const result = await createTunnel(scriptId);
-        
-        // Find and update the script
-        const scriptIndex = scriptsData.findIndex(s => s.entity_id === scriptId);
-        if (scriptIndex !== -1) {
-            // Update the script with tunnel info
-            scriptsData[scriptIndex].tunnelInfo = {
-                tunnel_url: result.tunnel_url,
-                complete_url: result.complete_url
-            };
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        if (indicator.parentNode) {
+            indicator.remove();
+        }
+    }, 3000);
+}
+
+// Retry mechanism for tunnel creation
+async function createTunnelWithRetry(scriptId, maxRetries = 3, delayMs = 1000) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`Attempt ${attempt}/${maxRetries} to create tunnel for ${scriptId}`);
             
-            console.log('Created tunnel for', scriptId, ':', result.complete_url);
-            
-            // Update filtered scripts as well
-            const filteredIndex = filteredScripts.findIndex(s => s.entity_id === scriptId);
-            if (filteredIndex !== -1) {
-                filteredScripts[filteredIndex].tunnelInfo = {
-                    tunnel_url: result.tunnel_url,
-                    complete_url: result.complete_url
-                };
+            if (attempt > 1) {
+                // Show retry notification
+                showRetryIndicator(`Retrying tunnel creation... (${attempt}/${maxRetries})`);
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, delayMs));
             }
             
-            // Re-render the specific card
-            renderScriptCard(scriptsData[scriptIndex]);
-            showSuccess('Tunnel created successfully!');
+            const result = await createTunnel(scriptId);
+            console.log(`Tunnel created successfully on attempt ${attempt}`);
+            return result;
+            
+        } catch (error) {
+            lastError = error;
+            console.error(`Attempt ${attempt} failed:`, error.message);
+            
+            if (attempt === maxRetries) {
+                throw new Error(`Failed to create tunnel after ${maxRetries} attempts. Last error: ${error.message}`);
+            }
         }
+    }
+}
+
+// Share script functionality
+async function shareScript(scriptId) {
+    const scriptIndex = scriptsData.findIndex(s => s.entity_id === scriptId);
+    if (scriptIndex === -1) return;
+
+    // Set loading state and re-render
+    scriptsData[scriptIndex].isLoading = true;
+    renderScriptCard(scriptsData[scriptIndex]);
+
+    try {
+        const result = await createTunnelWithRetry(scriptId);
+        
+        scriptsData[scriptIndex].tunnelInfo = {
+            tunnel_url: result.tunnel_url,
+            complete_url: result.complete_url
+        };
+        const filteredIndex = filteredScripts.findIndex(s => s.entity_id === scriptId);
+        if (filteredIndex !== -1) {
+            filteredScripts[filteredIndex].tunnelInfo = { ...scriptsData[scriptIndex].tunnelInfo };
+        }
+        setActiveTunnel(scriptId);
+        showSuccess('Tunnel created successfully!');
     } catch (error) {
         console.error('Error sharing script:', error);
         showError(`Failed to create tunnel: ${error.message}`);
     } finally {
-        // Remove loading state
-        button.classList.remove('loading');
-        button.disabled = false;
+        scriptsData[scriptIndex].isLoading = false;
+        renderScriptCard(scriptsData[scriptIndex]);
+    }
+}
+
+// Update card content without full re-render
+function updateCardContent(script) {
+    const cardElement = $(`[data-script-id="${script.entity_id}"]`);
+    if (!cardElement) return;
+    
+    // Update the URL section
+    const urlSection = cardElement.querySelector('.url-section');
+    if (urlSection) {
+        const newUrlSection = createUrlSection(script, script.tunnelInfo);
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = newUrlSection;
+        urlSection.replaceWith(tempDiv.firstElementChild);
+    }
+    
+    // Update the action buttons
+    const titleContainer = cardElement.querySelector('.script-title-container');
+    if (titleContainer) {
+        const actionButtons = titleContainer.querySelector('div');
+        if (actionButtons) {
+            if (script.tunnelInfo) {
+                actionButtons.innerHTML = `<button class="btn btn-secondary" onclick="revokeUrl('${script.entity_id}')">Revoke</button>`;
+            } else {
+                actionButtons.innerHTML = `<button class="btn btn-primary" data-script-id="${script.entity_id}" onclick="shareScript('${script.entity_id}')" ${activeTunnelScriptId && activeTunnelScriptId !== script.entity_id ? 'disabled' : ''}>${activeTunnelScriptId && activeTunnelScriptId !== script.entity_id ? 'Share (Tunnel Active)' : 'Share'}</button>`;
+            }
+        }
+    }
+    
+    // Update active tunnel visual indicator
+    if (script.tunnelInfo) {
+        cardElement.classList.add('has-active-tunnel');
+    } else {
+        cardElement.classList.remove('has-active-tunnel');
+    }
+}
+
+// Retry mechanism for tunnel deletion
+async function deleteTunnelWithRetry(scriptId, maxRetries = 3, delayMs = 1000) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`Attempt ${attempt}/${maxRetries} to delete tunnel for ${scriptId}`);
+            
+            if (attempt > 1) {
+                // Show retry notification
+                showRetryIndicator(`Retrying tunnel deletion... (${attempt}/${maxRetries})`);
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+            
+            const result = await deleteTunnel(scriptId);
+            console.log(`Tunnel deleted successfully on attempt ${attempt}`);
+            return result;
+            
+        } catch (error) {
+            lastError = error;
+            console.error(`Attempt ${attempt} failed:`, error.message);
+            
+            if (attempt === maxRetries) {
+                throw new Error(`Failed to delete tunnel after ${maxRetries} attempts. Last error: ${error.message}`);
+            }
+        }
     }
 }
 
 // Revoke URL functionality
-async function revokeUrl(scriptId, button) {
-    console.log('Revoking tunnel for script:', scriptId);
-    
-    // Add loading state
-    button.classList.add('loading');
-    button.disabled = true;
-    
+async function revokeUrl(scriptId) {
+    const scriptIndex = scriptsData.findIndex(s => s.entity_id === scriptId);
+    if (scriptIndex === -1) return;
+
+    // Set loading state and re-render
+    scriptsData[scriptIndex].isLoading = true;
+    renderScriptCard(scriptsData[scriptIndex]);
+
     try {
-        await deleteTunnel(scriptId);
+        await deleteTunnelWithRetry(scriptId);
         
-        // Find and update the script
-        const scriptIndex = scriptsData.findIndex(s => s.entity_id === scriptId);
-        if (scriptIndex !== -1) {
-            scriptsData[scriptIndex].tunnelInfo = null;
-            
-            console.log('Revoked tunnel for', scriptId);
-            
-            // Update filtered scripts as well
-            const filteredIndex = filteredScripts.findIndex(s => s.entity_id === scriptId);
-            if (filteredIndex !== -1) {
-                filteredScripts[filteredIndex].tunnelInfo = null;
-            }
-            
-            // Re-render the specific card
-            renderScriptCard(scriptsData[scriptIndex]);
-            showSuccess('Tunnel revoked successfully!');
+        scriptsData[scriptIndex].tunnelInfo = null;
+        
+        const filteredIndex = filteredScripts.findIndex(s => s.entity_id === scriptId);
+        if (filteredIndex !== -1) {
+            filteredScripts[filteredIndex].tunnelInfo = null;
         }
+        
+        clearActiveTunnel();
+        showSuccess('Tunnel revoked successfully!');
     } catch (error) {
         console.error('Error revoking tunnel:', error);
         showError(`Failed to revoke tunnel: ${error.message}`);
     } finally {
-        // Remove loading state
-        button.classList.remove('loading');
-        button.disabled = false;
+       scriptsData[scriptIndex].isLoading = false;
+       renderScriptCard(scriptsData[scriptIndex]);
     }
 }
 
@@ -413,7 +552,6 @@ function renderScriptCard(script) {
     const cardElement = $(`[data-script-id="${script.entity_id}"]`);
     if (cardElement) {
         const newCard = createScriptCard(script, script.tunnelInfo);
-        newCard.setAttribute('data-script-id', script.entity_id);
         cardElement.replaceWith(newCard);
     }
 }
@@ -436,19 +574,33 @@ function renderScripts() {
     });
 }
 
+// Initialize active tunnel state from existing tunnels
+async function initActiveTunnel() {
+    try {
+        const tunnels = await fetchTunnels();
+        if (tunnels.length > 0) {
+            // Use the first tunnel as active (assuming single tunnel enforcement)
+            setActiveTunnel(tunnels[0].script_id);
+        }
+    } catch (error) {
+        console.error('Error initializing active tunnel:', error);
+    }
+}
+
 // Initialize the application
 async function init() {
-    console.log('Initializing Script Manager...');
+    console.log('Initializing application...');
     
     try {
         // Load scripts from Home Assistant
         const scripts = await fetchScripts();
         console.log('Raw scripts from API:', scripts);
         
-        // Transform scripts to include tunnel info
+        // Transform scripts to include tunnel info and loading state
         scriptsData = scripts.map(script => ({
             ...script,
-            tunnelInfo: null // Will be populated with tunnel data
+            tunnelInfo: null,
+            isLoading: false
         }));
         
         // Load existing tunnels
@@ -467,11 +619,14 @@ async function init() {
         // Update filtered scripts
         filteredScripts = scriptsData.map(script => ({ ...script }));
         
+        // Initialize active tunnel state
+        await initActiveTunnel();
+        
         // Render the UI
         renderScripts();
         setupSearch();
         
-        console.log('Script Manager initialized successfully');
+        console.log('Application initialized successfully');
         console.log('Loaded', scriptsData.length, 'scripts');
         console.log('Active tunnels:', tunnels.length);
         console.log('Final scripts data:', scriptsData);
