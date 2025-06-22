@@ -35,12 +35,18 @@ async function fetchScripts() {
 
 async function createTunnel(scriptId) {
     try {
+        const timeoutInput = $('#timeout-input');
+        const timeout_minutes = timeoutInput ? parseInt(timeoutInput.value, 10) : 15;
+
         const response = await fetch(`tunnels/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ script_id: scriptId })
+            body: JSON.stringify({ 
+                script_id: scriptId,
+                timeout_minutes: timeout_minutes
+            })
         });
         
         if (!response.ok) {

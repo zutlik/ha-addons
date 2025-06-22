@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Publish Scripts
-version: "1.0.0"
+version: "1.0.1"
 slug: publish-scripts
 description: A FastAPI-based add-on for publishing and managing scripts in Home Assistant with REST API interface
 url: "https://github.com/zutlik/ha-addons/tree/main/publish-scripts"
