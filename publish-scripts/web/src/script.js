@@ -210,6 +210,39 @@ function showSuccess(message) {
     }, 5000);
 }
 
+// Pinning logic
+function getPinnedScripts() {
+    try {
+        return JSON.parse(localStorage.getItem('pinnedScripts') || '[]');
+    } catch {
+        return [];
+    }
+}
+
+function setPinnedScripts(pinned) {
+    localStorage.setItem('pinnedScripts', JSON.stringify(pinned));
+}
+
+function isScriptPinned(scriptId) {
+    return getPinnedScripts().includes(scriptId);
+}
+
+function pinScript(scriptId) {
+    const pinned = getPinnedScripts();
+    if (!pinned.includes(scriptId)) {
+        pinned.push(scriptId);
+        setPinnedScripts(pinned);
+        renderScripts();
+    }
+}
+
+function unpinScript(scriptId) {
+    let pinned = getPinnedScripts();
+    pinned = pinned.filter(id => id !== scriptId);
+    setPinnedScripts(pinned);
+    renderScripts();
+}
+
 // Create URL section HTML
 function createUrlSection(script, tunnelInfo) {
     if (!tunnelInfo) {
@@ -256,14 +289,40 @@ function createScriptCard(script, tunnelInfo) {
         </div>
     `;
     
-    return `
-        <div class="script-card" data-script-id="${script.entity_id}">
-            ${titleSection}
-            <div class="script-id">${script.entity_id}</div>
-            <div class="script-state">State: ${scriptState}</div>
-            ${createUrlSection(script, tunnelInfo)}
-        </div>
+    const card = createElement('div', 'script-card');
+    card.setAttribute('data-script-id', script.entity_id);
+    card.innerHTML = `
+        ${titleSection}
+        <div class="script-id">${script.entity_id}</div>
+        <div class="script-state">State: ${scriptState}</div>
+        ${createUrlSection(script, tunnelInfo)}
     `;
+    
+    // Pin icon button
+    const isPinned = isScriptPinned(script.entity_id);
+    const pinBtn = createElement('button', 'btn btn-pin', isPinned ? '📌' : '📍');
+    pinBtn.title = isPinned ? 'Unpin this script' : 'Pin this script';
+    pinBtn.setAttribute('aria-label', isPinned ? 'Unpin' : 'Pin');
+    pinBtn.onclick = () => {
+        if (isPinned) {
+            unpinScript(script.entity_id);
+        } else {
+            pinScript(script.entity_id);
+        }
+    };
+    // Add a visual indicator if pinned
+    if (isPinned) {
+        card.classList.add('pinned');
+    }
+    // Place pin icon in the card header/title
+    const titleContainer = card.querySelector('.script-title-container');
+    if (titleContainer) {
+        titleContainer.appendChild(pinBtn);
+    } else {
+        card.prepend(pinBtn);
+    }
+    
+    return card;
 }
 
 // Share script functionality
@@ -353,7 +412,9 @@ async function revokeUrl(scriptId, button) {
 function renderScriptCard(script) {
     const cardElement = $(`[data-script-id="${script.entity_id}"]`);
     if (cardElement) {
-        cardElement.outerHTML = createScriptCard(script, script.tunnelInfo);
+        const newCard = createScriptCard(script, script.tunnelInfo);
+        newCard.setAttribute('data-script-id', script.entity_id);
+        cardElement.replaceWith(newCard);
     }
 }
 
@@ -361,19 +422,18 @@ function renderScriptCard(script) {
 function renderScripts() {
     const container = $('#scripts-container');
     if (!container) return;
-    
-    if (filteredScripts.length === 0) {
-        container.innerHTML = `
-            <div class="no-scripts">
-                <p>No scripts found matching your search.</p>
-            </div>
-        `;
-        return;
-    }
-    
-    container.innerHTML = filteredScripts.map(script => 
-        createScriptCard(script, script.tunnelInfo)
-    ).join('');
+    container.innerHTML = '';
+    // Sort: pinned scripts first (in pin order), then the rest
+    const pinned = getPinnedScripts();
+    const pinnedScripts = filteredScripts.filter(s => pinned.includes(s.entity_id));
+    // Sort pinned in the order of the pinned array
+    pinnedScripts.sort((a, b) => pinned.indexOf(a.entity_id) - pinned.indexOf(b.entity_id));
+    const unpinnedScripts = filteredScripts.filter(s => !pinned.includes(s.entity_id));
+    const all = [...pinnedScripts, ...unpinnedScripts];
+    all.forEach(script => {
+        const card = createScriptCard(script, script.tunnelInfo);
+        container.appendChild(card);
+    });
 }
 
 // Initialize the application

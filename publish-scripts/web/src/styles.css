@@ -407,3 +407,40 @@ body {
 .script-card {
   animation: fadeIn 0.5s ease-out;
 }
+
+/* Pin button */
+.btn-pin {
+  background: transparent;
+  color: #fbbf24;
+  border: 1px solid #fbbf24;
+  margin-left: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.btn-pin:hover {
+  background: #fbbf24;
+  color: #1e293b;
+}
+
+/* Pinned card */
+.script-card.pinned {
+  border: 2px solid #fbbf24;
+  box-shadow: 0 0 10px 2px #fbbf2433;
+  position: relative;
+}
+.script-card.pinned::before {
+  content: '📌 Pinned';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #fbbf24;
+  color: #1e293b;
+  font-size: 0.85rem;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 6px;
+  z-index: 2;
+}
