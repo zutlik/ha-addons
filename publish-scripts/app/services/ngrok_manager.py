@@ -5,6 +5,8 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 from settings import get_settings
+import secrets
+from typing import Optional
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -14,6 +16,7 @@ class NgrokManager:
         settings = get_settings()
         self.ngrok_token = settings.ngrok_auth_token
         self.active_tunnels = {}  # Store active tunnels by script_id
+        self.hash_to_script = {}  # Map unique hash to script_id
         self.ngrok_process = None
         self.cleanup_task = None # To hold the cleanup task
         
@@ -26,35 +29,50 @@ class NgrokManager:
             logger.info(f"✅ ngrok Token (first 5 chars): {self.ngrok_token[:5]}...")
         
         logger.info(f"ngrok Token configured: {bool(self.ngrok_token)}")
-        self.start_cleanup_task()
+        # Don't start cleanup task automatically - only when needed
 
     def start_cleanup_task(self):
         """Start the background task to clean up expired tunnels."""
-        if self.cleanup_task is None or self.cleanup_task.done():
-            self.cleanup_task = asyncio.create_task(self._cleanup_expired_tunnels())
-            logger.info("🔥 Tunnel cleanup task started.")
+        # Only start if there are tunnels with expiration times
+        has_expiring_tunnels = any(
+            'expiration_time' in tunnel_info 
+            for tunnel_info in self.active_tunnels.values()
+        )
+        
+        if has_expiring_tunnels and (self.cleanup_task is None or self.cleanup_task.done()):
+            try:
+                self.cleanup_task = asyncio.create_task(self._cleanup_expired_tunnels())
+                logger.info("🔥 Tunnel cleanup task started.")
+            except Exception as e:
+                logger.error(f"Failed to start cleanup task: {e}")
 
     async def _cleanup_expired_tunnels(self):
         """Periodically check for and remove expired tunnels."""
-        while True:
-            await asyncio.sleep(60) # Check every 60 seconds
-            now = datetime.utcnow()
-            expired_scripts = []
-            
-            # Using list() to avoid issues with modifying dict during iteration
-            for script_id, tunnel_info in list(self.active_tunnels.items()):
-                if 'expiration_time' in tunnel_info and now > tunnel_info['expiration_time']:
-                    expired_scripts.append(script_id)
-            
-            if expired_scripts:
-                logger.info(f"⌛ Found {len(expired_scripts)} expired tunnels: {', '.join(expired_scripts)}")
-                for script_id in expired_scripts:
-                    self.remove_tunnel(script_id)
+        try:
+            while True:
+                await asyncio.sleep(60) # Check every 60 seconds
+                now = datetime.utcnow()
+                expired_scripts = []
                 
-                # If no tunnels are left, stop the main ngrok process
-                if not self.active_tunnels:
-                    logger.info("All tunnels expired or removed, stopping ngrok process.")
-                    self.stop_tunnel()
+                # Using list() to avoid issues with modifying dict during iteration
+                for script_id, tunnel_info in list(self.active_tunnels.items()):
+                    if 'expiration_time' in tunnel_info and now > tunnel_info['expiration_time']:
+                        expired_scripts.append(script_id)
+                
+                if expired_scripts:
+                    logger.info(f"⌛ Found {len(expired_scripts)} expired tunnels: {', '.join(expired_scripts)}")
+                    for script_id in expired_scripts:
+                        self.remove_tunnel(script_id)
+                    
+                    # If no tunnels are left, stop the main ngrok process
+                    if not self.active_tunnels:
+                        logger.info("All tunnels expired or removed, stopping ngrok process.")
+                        self.stop_tunnel()
+                        break  # Exit the loop since no more tunnels
+        except asyncio.CancelledError:
+            logger.info("Cleanup task cancelled.")
+        except Exception as e:
+            logger.error(f"Error in cleanup task: {e}")
 
     def stop_cleanup_task(self):
         """Stop the background cleanup task."""
@@ -164,23 +182,46 @@ class NgrokManager:
         """Get tunnel information for a specific script"""
         return self.active_tunnels.get(script_id)
     
-    def add_tunnel(self, script_id: str, tunnel_info: dict, timeout_minutes: int | None = None):
+    def generate_unique_hash(self, length=12):
+        """Generate a unique hash for the dynamic endpoint."""
+        while True:
+            hash_str = secrets.token_urlsafe(length)[:length]
+            if hash_str not in self.hash_to_script:
+                return hash_str
+
+    def add_tunnel(self, script_id: str, tunnel_info: dict, timeout_minutes: Optional[int] = None):
         """Add a tunnel to active tunnels with complete_url and optional expiration."""
+        # Generate a unique hash for this tunnel
+        if 'unique_hash' not in tunnel_info:
+            unique_hash = self.generate_unique_hash()
+            tunnel_info['unique_hash'] = unique_hash
+        else:
+            unique_hash = tunnel_info['unique_hash']
+        self.hash_to_script[unique_hash] = script_id
+
         # Generate complete_url if not present
         if 'complete_url' not in tunnel_info and 'tunnel_url' in tunnel_info:
-            tunnel_info['complete_url'] = self.generate_complete_url(
-                tunnel_info['tunnel_url'], 
-                script_id
-            )
-        
+            tunnel_info['complete_url'] = f"{tunnel_info['tunnel_url']}/run/{unique_hash}"
         if timeout_minutes:
             tunnel_info['expiration_time'] = datetime.utcnow() + timedelta(minutes=timeout_minutes)
             logger.info(f"Tunnel for {script_id} will expire at {tunnel_info['expiration_time'].strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
         self.active_tunnels[script_id] = tunnel_info
-    
+        
+        # Start cleanup task if this tunnel has an expiration time
+        if timeout_minutes:
+            self.start_cleanup_task()
+
+    def get_script_id_by_hash(self, unique_hash: str):
+        """Get the script_id associated with a unique hash."""
+        return self.hash_to_script.get(unique_hash)
+
     def remove_tunnel(self, script_id: str):
-        """Remove a tunnel from active tunnels"""
+        """Remove a tunnel from active tunnels and hash mapping."""
+        tunnel_info = self.active_tunnels.get(script_id)
+        if tunnel_info and 'unique_hash' in tunnel_info:
+            unique_hash = tunnel_info['unique_hash']
+            if unique_hash in self.hash_to_script:
+                del self.hash_to_script[unique_hash]
         if script_id in self.active_tunnels:
             del self.active_tunnels[script_id]
             logger.info(f"Removed tunnel for script {script_id}.")

@@ -65,11 +65,10 @@ async def create_tunnel(request: CreateTunnelRequest, background_tasks: Backgrou
             'script_id': script_id,
             'created_at': asyncio.get_event_loop().time()
         }
-        
+        # ngrok_manager.add_tunnel will now generate the unique hash and complete_url
         ngrok_manager.add_tunnel(script_id, tunnel_info, timeout_minutes=request.timeout_minutes)
-        
-        # Get the complete URL
-        complete_url = ngrok_manager.get_complete_url_for_script(script_id)
+        # Get the complete URL (now includes the unique hash)
+        complete_url = tunnel_info.get('complete_url')
         
         logger.info(f"✅ Created tunnel for script {script_id}: {tunnel_url}")
         logger.info(f"🔗 Complete URL: {complete_url}")

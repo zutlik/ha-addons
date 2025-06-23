@@ -3,6 +3,7 @@ from .ha_client import HomeAssistantClient
 from .ngrok_manager import NgrokManager
 from settings import Settings
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +47,14 @@ class ServiceManager:
             raise
     
     @property
-    def ha_client(self) -> HomeAssistantClient:
+    def ha_client(self) -> Optional[HomeAssistantClient]:
         """Get the Home Assistant client instance."""
         if not self._initialized:
             self.initialize_services()
         return self._ha_client
     
     @property
-    def ngrok_manager(self) -> NgrokManager:
+    def ngrok_manager(self) -> Optional[NgrokManager]:
         """Get the Ngrok manager instance."""
         if not self._initialized:
             self.initialize_services()
@@ -87,7 +88,8 @@ class ServiceManager:
                 }
         
         ha_configured = self._ha_client.is_configured() if self._ha_client else False
-        ha_connected = self._ha_client.test_connection() if ha_configured else False
+        # Don't test connection during startup to avoid worker timeouts
+        ha_connected = ha_configured  # Assume connected if configured
         ngrok_configured = self._ngrok_manager.is_configured() if self._ngrok_manager else False
         
         return {
@@ -102,11 +104,11 @@ class ServiceManager:
 service_manager = ServiceManager()
 
 # Convenience functions for backward compatibility
-def get_ha_client() -> HomeAssistantClient:
+def get_ha_client() -> Optional[HomeAssistantClient]:
     """Get the Home Assistant client instance."""
     return service_manager.ha_client
 
-def get_ngrok_manager() -> NgrokManager:
+def get_ngrok_manager() -> Optional[NgrokManager]:
     """Get the Ngrok manager instance."""
     return service_manager.ngrok_manager
 

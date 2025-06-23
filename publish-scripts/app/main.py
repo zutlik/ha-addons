@@ -2,13 +2,14 @@ import sys
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import Optional
 
 # Add the current directory (app folder) to Python path to ensure imports work
 current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import logging
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +24,7 @@ from routers import health, tunnels, scripts
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Optional[Settings] = None) -> FastAPI:
     if settings is None:
         settings = get_settings() 
 
@@ -80,6 +81,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content={"detail": "Internal server error"}
         )
 
+    # Add dynamic catch-all endpoint for /run/{unique_hash}
+    @app.get("/run/{unique_hash}")
+    async def run_script_by_hash(unique_hash: str, request: Request):
+        ngrok_manager = get_ngrok_manager()
+        if not ngrok_manager:
+            raise HTTPException(status_code=503, detail="Ngrok manager not available.")
+        
+        script_id = ngrok_manager.get_script_id_by_hash(unique_hash)
+        if not script_id:
+            raise HTTPException(status_code=404, detail="Invalid or expired URL.")
+        
+        ha_client = get_ha_client()
+        if not ha_client:
+            raise HTTPException(status_code=503, detail="Home Assistant client not available.")
+        
+        try:
+            result = await ha_client.run_script_async(script_id)
+            return JSONResponse({
+                "success": True,
+                "message": f"Script {script_id} executed successfully",
+                "script_id": script_id,
+                "result": result
+            })
+        except Exception as e:
+            return JSONResponse({
+                "success": False,
+                "message": f"Failed to execute script: {e}",
+                "script_id": script_id
+            }, status_code=500)
+
     return app
 
 def validate_startup_configuration():
@@ -90,7 +121,7 @@ def validate_startup_configuration():
     
     # Check Home Assistant token
     ha_client = get_ha_client()
-    if not ha_client.is_configured():
+    if not ha_client or not ha_client.is_configured():
         logger.error("❌ HASSIO_TOKEN not configured!")
         logger.error("   Please configure the add-on with a valid Home Assistant token.")
         logger.error("   Go to Settings → Add-ons → Publish Scripts → Configuration")
@@ -98,7 +129,7 @@ def validate_startup_configuration():
     
     # Check Ngrok token (optional but recommended)
     ngrok_manager = get_ngrok_manager()
-    if not ngrok_manager.is_configured():
+    if not ngrok_manager or not ngrok_manager.is_configured():
         logger.warning("⚠️  NGROK_AUTH_TOKEN not configured!")
         logger.warning("   Ngrok functionality will be disabled.")
         logger.warning("   To enable ngrok tunnels, add NGROK_AUTH_TOKEN to configuration.")
@@ -113,6 +144,10 @@ def test_home_assistant_connectivity():
     
     try:
         ha_client = get_ha_client()
+        if not ha_client:
+            logger.error("❌ Home Assistant client not available!")
+            return
+        
         # Test basic connectivity
         if not ha_client.test_connection():
             logger.error("❌ Cannot connect to Home Assistant!")
