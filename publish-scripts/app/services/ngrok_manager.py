@@ -19,6 +19,7 @@ class NgrokManager:
         self.hash_to_script = {}  # Map unique hash to script_id
         self.ngrok_process = None
         self.cleanup_task = None # To hold the cleanup task
+        self._warmed_up = False  # Track if ngrok has been warmed up
         
         # Log ngrok token status (don't raise exception for missing token)
         if not self.ngrok_token:
@@ -30,6 +31,72 @@ class NgrokManager:
         
         logger.info(f"ngrok Token configured: {bool(self.ngrok_token)}")
         # Don't start cleanup task automatically - only when needed
+
+    def warm_up_ngrok(self, port):
+        """
+        Pre-initialize ngrok to avoid first-time startup delays.
+        This starts ngrok in the background and waits for it to be ready.
+        """
+        if self._warmed_up or not self.ngrok_token:
+            return True
+            
+        try:
+            logger.info("🔥 Warming up ngrok for faster first tunnel creation...")
+            
+            # Start ngrok in background
+            cmd = ['ngrok', 'http', str(port), '--log=stdout']
+            if self.ngrok_token:
+                cmd.extend(['--authtoken', self.ngrok_token])
+            
+            self.ngrok_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Wait for ngrok to be ready with retry logic
+            max_retries = 8
+            retry_delay = 1
+            
+            for attempt in range(max_retries):
+                logger.info(f"Warming up ngrok (attempt {attempt + 1}/{max_retries})...")
+                time.sleep(retry_delay)
+                
+                # Check if process is still running
+                if self.ngrok_process.poll() is not None:
+                    stderr_output = ""
+                    if self.ngrok_process.stderr:
+                        stderr_output = self.ngrok_process.stderr.read()
+                    logger.error(f"ngrok warm-up failed. stderr: {stderr_output}")
+                    return False
+                
+                # Try to get the URL to confirm ngrok is ready
+                url = self.get_existing_tunnel_url()
+                if url:
+                    logger.info(f"✅ ngrok warmed up successfully: {url}")
+                    self._warmed_up = True
+                    return True
+                
+                # Increase delay for next attempt
+                retry_delay = min(retry_delay * 1.2, 4)
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"ngrok not ready yet, retrying in {retry_delay:.1f} seconds...")
+            
+            # If warm-up fails, clean up and return False
+            logger.warning("❌ ngrok warm-up failed after all attempts")
+            if self.ngrok_process:
+                self.ngrok_process.terminate()
+                self.ngrok_process = None
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error during ngrok warm-up: {e}")
+            if self.ngrok_process:
+                self.ngrok_process.terminate()
+                self.ngrok_process = None
+            return False
 
     def start_cleanup_task(self):
         """Start the background task to clean up expired tunnels."""
@@ -111,6 +178,16 @@ class NgrokManager:
                 return url
             logger.warning("ngrok process running, but couldn't get URL. Will attempt to restart.")
             
+        # If ngrok was warmed up, try to use the existing process
+        if self._warmed_up and self.ngrok_process and self.ngrok_process.poll() is None:
+            url = self.get_existing_tunnel_url()
+            if url:
+                logger.info("✅ Using warmed-up ngrok process")
+                return url
+            else:
+                logger.warning("Warmed-up ngrok process not responding, will restart")
+                self._warmed_up = False
+            
         try:
             # Kill any orphaned ngrok processes before starting a new one
             subprocess.run(['pkill', '-f', 'ngrok'], capture_output=True)
@@ -128,18 +205,41 @@ class NgrokManager:
                 text=True
             )
             
-            # Wait a moment for ngrok to start and get the URL
-            time.sleep(3)
-            url = self.get_existing_tunnel_url()
-            if url:
-                return url
-            else:
-                # If API fails, check logs or raise error
-                stderr_output = ""
-                if self.ngrok_process.stderr:
-                    stderr_output = self.ngrok_process.stderr.read()
-                logger.error(f"ngrok stderr: {stderr_output}")
-                raise Exception("Failed to get tunnel URL after starting process.")
+            # Wait for ngrok to start and get the URL with retry logic
+            max_retries = 5
+            retry_delay = 2  # Start with 2 seconds
+            
+            for attempt in range(max_retries):
+                logger.info(f"Waiting for ngrok to start (attempt {attempt + 1}/{max_retries})...")
+                time.sleep(retry_delay)
+                
+                # Check if process is still running
+                if self.ngrok_process.poll() is not None:
+                    # Process died, check stderr for error
+                    stderr_output = ""
+                    if self.ngrok_process.stderr:
+                        stderr_output = self.ngrok_process.stderr.read()
+                    logger.error(f"ngrok process died. stderr: {stderr_output}")
+                    raise Exception("ngrok process failed to start")
+                
+                # Try to get the URL
+                url = self.get_existing_tunnel_url()
+                if url:
+                    logger.info(f"✅ ngrok tunnel started successfully: {url}")
+                    return url
+                
+                # Increase delay for next attempt (exponential backoff)
+                retry_delay = min(retry_delay * 1.5, 8)  # Cap at 8 seconds
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"ngrok API not ready yet, retrying in {retry_delay:.1f} seconds...")
+            
+            # If we get here, all retries failed
+            stderr_output = ""
+            if self.ngrok_process.stderr:
+                stderr_output = self.ngrok_process.stderr.read()
+            logger.error(f"Failed to get tunnel URL after {max_retries} attempts. stderr: {stderr_output}")
+            raise Exception(f"Failed to get tunnel URL after {max_retries} attempts. ngrok may not have started properly.")
                 
         except Exception as e:
             logger.error(f"Error starting ngrok tunnel: {e}")

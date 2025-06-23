@@ -1,7 +1,7 @@
 # Services package
 from .ha_client import HomeAssistantClient
 from .ngrok_manager import NgrokManager
-from settings import Settings
+from settings import Settings, get_settings
 import logging
 from typing import Optional
 
@@ -34,6 +34,15 @@ class ServiceManager:
             try:
                 self._ngrok_manager = NgrokManager()
                 logger.info("✅ Ngrok manager initialized")
+                
+                # Warm up ngrok for faster first tunnel creation
+                if self._ngrok_manager.is_configured():
+                    logger.info("🚀 Starting ngrok warm-up...")
+                    warm_up_success = self._ngrok_manager.warm_up_ngrok(self._settings.port)
+                    if warm_up_success:
+                        logger.info("✅ ngrok warm-up completed successfully")
+                    else:
+                        logger.warning("⚠️ ngrok warm-up failed, but service will continue")
             except Exception as e:
                 logger.warning(f"⚠️  Ngrok manager initialization failed: {e}")
                 logger.warning("   Ngrok functionality will be disabled")
