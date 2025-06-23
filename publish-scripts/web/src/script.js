@@ -423,6 +423,11 @@ async function createTunnelWithRetry(scriptId, maxRetries = 3, delayMs = 1000) {
 
 // Share script functionality
 async function shareScript(scriptId) {
+    // Enforce only one tunnel at a time
+    if (activeTunnelScriptId && activeTunnelScriptId !== scriptId) {
+        showError('Only one tunnel can be active at a time. Please revoke the existing tunnel before creating a new one.');
+        return;
+    }
     const scriptIndex = scriptsData.findIndex(s => s.entity_id === scriptId);
     if (scriptIndex === -1) return;
 
@@ -432,7 +437,6 @@ async function shareScript(scriptId) {
 
     try {
         const result = await createTunnelWithRetry(scriptId);
-        
         scriptsData[scriptIndex].tunnelInfo = {
             tunnel_url: result.tunnel_url,
             complete_url: result.complete_url
@@ -554,6 +558,7 @@ function renderScriptCard(script) {
         const newCard = createScriptCard(script, script.tunnelInfo);
         cardElement.replaceWith(newCard);
     }
+    updateShareButtons(); // Ensure button state is updated after rendering
 }
 
 // Render all scripts
@@ -572,6 +577,7 @@ function renderScripts() {
         const card = createScriptCard(script, script.tunnelInfo);
         container.appendChild(card);
     });
+    updateShareButtons(); // Ensure button state is updated after rendering
 }
 
 // Initialize active tunnel state from existing tunnels
