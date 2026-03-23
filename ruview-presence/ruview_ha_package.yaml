@@ -1,0 +1,47 @@
+# RuView WiFi Presence — HA sensors package
+# Auto-installed by the addon into /config/packages/ruview.yaml on startup.
+# Restart Home Assistant once after first addon start to activate these sensors.
+
+rest:
+  - resource: http://localhost:3000/api/v1/pose/current
+    scan_interval: 20
+    sensor:
+      - name: "RuView Person Count"
+        unique_id: ruview_person_count
+        value_template: "{{ value_json.total_persons | int(0) }}"
+        unit_of_measurement: "persons"
+        icon: mdi:account-multiple
+        state_class: measurement
+
+      - name: "RuView Presence Confidence"
+        unique_id: ruview_presence_confidence
+        value_template: >-
+          {{ value_json.persons[0].confidence | default(0) | round(2)
+             if value_json.total_persons | int(0) > 0
+             else 0 }}
+        unit_of_measurement: ""
+        icon: mdi:signal
+
+      - name: "RuView Source Mode"
+        unique_id: ruview_source_mode
+        value_template: "{{ value_json.source | default('unknown') }}"
+        icon: mdi:wifi-settings
+
+  - resource: http://localhost:3000/health
+    scan_interval: 60
+    sensor:
+      - name: "RuView Status"
+        unique_id: ruview_status
+        value_template: "{{ value_json.status | default('unknown') }}"
+        icon: mdi:wifi-check
+
+template:
+  - binary_sensor:
+      - name: "WiFi Presence"
+        unique_id: ruview_wifi_presence
+        device_class: presence
+        state: "{{ states('sensor.ruview_person_count') | int(0) > 0 }}"
+        delay_off:
+          seconds: 45
+        icon: "mdi:wifi"
+        availability: "{{ states('sensor.ruview_status') == 'ok' }}"
