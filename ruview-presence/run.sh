@@ -33,29 +33,33 @@ echo "[RuView] Restart Home Assistant once to activate the sensors."
 # HA does NOT inject options as env vars automatically — must read explicitly.
 OPTIONS="/data/options.json"
 if [ -f "$OPTIONS" ]; then
-    CSI_SOURCE=$(python3 -c "import json,sys; print(json.load(open('$OPTIONS')).get('CSI_SOURCE','wifi'))" 2>/dev/null || echo "wifi")
+    CSI_SOURCE=$(python3 -c "import json,sys; print(json.load(open('$OPTIONS')).get('CSI_SOURCE','simulate'))" 2>/dev/null || echo "simulate")
     export CSI_SOURCE
     echo "[RuView] CSI_SOURCE=$CSI_SOURCE (from addon options)"
 else
-    export CSI_SOURCE="${CSI_SOURCE:-wifi}"
+    export CSI_SOURCE="${CSI_SOURCE:-simulate}"
     echo "[RuView] CSI_SOURCE=$CSI_SOURCE (default)"
 fi
 
+# ── NOTE on Linux WiFi support ────────────────────────────────────────────────
+# The upstream sensing-server binary only implements WiFi scanning via Windows'
+# netsh command. There is no native Linux WiFi probe in the binary. On Linux:
+#   simulate  → synthetic DensePose data, all HA sensors work (recommended)
+#   esp32     → real CSI data from an ESP32 module over UDP port 5005
+#   wifi      → calls netsh (Windows-only), falls back to simulate on Linux
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [ "$CSI_SOURCE" = "wifi" ] && [ "$(uname -s)" = "Linux" ]; then
+    echo "[RuView] WARNING: CSI_SOURCE=wifi is Windows-only (uses netsh)."
+    echo "[RuView] On Linux/Pi, 'wifi' will fall back to simulated data."
+    echo "[RuView] Use 'esp32' for real hardware sensing, or 'simulate' to suppress this warning."
+fi
+
 # ── 4. Start the RuView server ───────────────────────────────────────────────
-# Use 'exec env' to explicitly pass CSI_SOURCE into the binary,
-# bypassing any shell environment inheritance quirks.
 start_server() {
     local bin="$1"
-    # Map "wifi" to "linux" on Linux — the binary uses "linux" for the
-    # nl80211/iw-based WiFi RSSI probe on Linux platforms, whereas "wifi"
-    # is the identifier used on macOS/Windows builds.
-    local effective_source="$CSI_SOURCE"
-    if [ "$CSI_SOURCE" = "wifi" ] && [ "$(uname -s)" = "Linux" ]; then
-        effective_source="linux"
-        echo "[RuView] Remapping CSI_SOURCE wifi -> linux (Linux platform)"
-    fi
-    echo "[RuView] Starting: $bin --source $effective_source"
-    exec env "CSI_SOURCE=$effective_source" "$bin" --source "$effective_source"
+    echo "[RuView] Starting: $bin --source $CSI_SOURCE"
+    exec env "CSI_SOURCE=$CSI_SOURCE" "$bin" --source "$CSI_SOURCE"
 }
 
 # Try PATH first

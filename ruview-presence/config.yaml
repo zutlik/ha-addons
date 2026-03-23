@@ -1,8 +1,12 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: RuView WiFi Presence
-version: "1.0.9"
+version: "1.0.10"
 slug: ruview-presence
-description: WiFi-based human presence detection using RSSI. No camera or extra hardware needed — uses the Pi's built-in WiFi card.
+description: >-
+  WiFi-based human presence detection using DensePose. Runs fully on the Pi.
+  Use 'simulate' for immediate working sensors, or 'esp32' for real CSI sensing
+  with an ESP32 module (see RuView docs). Native Linux WiFi scanning is not yet
+  implemented in the upstream binary.
 url: "https://github.com/zutlik/ha-addons/tree/main/ruview-presence"
 arch:
   - aarch64
@@ -14,16 +18,13 @@ ports:
 ports_description:
   8080/tcp: "RuView Web UI and REST API"
 options:
-  CSI_SOURCE: "wifi"
+  CSI_SOURCE: "simulate"
 schema:
   # Renders as a dropdown in the addon Configuration tab
-  # wifi     = use Pi's built-in WiFi RSSI (real presence detection, no extra hardware)
-  # simulate = synthetic data, useful for testing HA sensors without hardware
-  # auto     = try ESP32 hardware first, fall back to simulate
-  CSI_SOURCE: "list(wifi|simulate|auto)"
+  # simulate = synthetic data — all HA sensors work, no extra hardware needed (recommended for Pi)
+  # esp32    = real CSI data from an ESP32 module connected over UDP (port 5005)
+  # wifi     = Windows-only netsh probe — falls back to simulate on Linux
+  CSI_SOURCE: "list(simulate|esp32|wifi)"
 restart_policy: unless-stopped
 map:
   - config:rw  # gives the addon write access to /config so it can drop the sensors package
-privileged:
-  - NET_ADMIN  # required to manage and scan WiFi interfaces on Linux
-  - NET_RAW    # required for raw socket access during WiFi RSSI scanning
