@@ -18,4 +18,3 @@ options:
 schema:
   CSI_SOURCE: "str"
 restart_policy: unless-stopped
-image: "ruvnet/wifi-densepose:latest"
