@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: RuView WiFi Presence
-version: "1.0.1"
+version: "1.0.2"
 slug: ruview-presence
 description: WiFi-based human presence detection using RSSI. No camera or extra hardware needed — uses the Pi's built-in WiFi card.
 url: "https://github.com/zutlik/ha-addons/tree/main/ruview-presence"
@@ -22,3 +22,5 @@ schema:
   # auto     = try ESP32 hardware first, fall back to simulate
   CSI_SOURCE: "list(wifi|simulate|auto)"
 restart_policy: unless-stopped
+# Direct pull from Docker Hub — no local build step
+image: "ruvnet/wifi-densepose:latest"
