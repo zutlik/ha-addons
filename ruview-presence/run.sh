@@ -1,20 +1,35 @@
 #!/usr/bin/env bash
 set -e
 
-# ── Install HA sensor package ─────────────────────────────────────────────────
-# Maps to /config inside the container when config:rw is set in addon config.
-# Creates /config/packages/ruview.yaml so HA auto-loads the sensors on restart.
-if [ -d "/config" ]; then
-    mkdir -p /config/packages
-    cp /tmp/ruview_ha_package.yaml /config/packages/ruview.yaml
-    echo "[RuView] Sensor package written to /config/packages/ruview.yaml"
-    echo "[RuView] Restart Home Assistant once to load the sensors."
+# ── 1. Drop the HA sensors package ───────────────────────────────────────────
+mkdir -p /config/packages
+cp /tmp/ruview_ha_package.yaml /config/packages/ruview.yaml
+echo "[RuView] Sensor package written to /config/packages/ruview.yaml"
+
+# ── 2. Ensure configuration.yaml loads the packages directory ────────────────
+CONFIG="/config/configuration.yaml"
+
+if grep -q "packages:" "$CONFIG" 2>/dev/null; then
+    echo "[RuView] Packages already enabled in configuration.yaml — skipping."
+elif grep -q "^homeassistant:" "$CONFIG" 2>/dev/null; then
+    # homeassistant: block exists but has no packages: key.
+    # Inject "  packages: !include_dir_named packages" on the line after it.
+    sed -i '/^homeassistant:/a\  packages: !include_dir_named packages' "$CONFIG"
+    echo "[RuView] Injected packages include under existing homeassistant: block."
 else
-    echo "[RuView] WARNING: /config not mounted, skipping sensor package install."
+    # No homeassistant: block at all — append one.
+    cat >> "$CONFIG" << 'EOF'
+
+# Added by RuView addon — loads /config/packages/*.yaml on HA startup
+homeassistant:
+  packages: !include_dir_named packages
+EOF
+    echo "[RuView] Appended homeassistant: packages block to configuration.yaml."
 fi
 
-# ── Start the RuView server ───────────────────────────────────────────────────
-# Try known binary locations in order (sensing_server seen in container logs).
+echo "[RuView] Restart Home Assistant once to activate the sensors."
+
+# ── 3. Start the RuView server ───────────────────────────────────────────────
 for bin in sensing_server wifi-densepose sensing-server server; do
     if command -v "$bin" &>/dev/null; then
         echo "[RuView] Starting: $bin"
@@ -22,7 +37,6 @@ for bin in sensing_server wifi-densepose sensing-server server; do
     fi
 done
 
-# Fallback: scan common paths
 for path in /usr/local/bin/sensing_server /app/sensing_server /app/server /usr/local/bin/server; do
     if [ -x "$path" ]; then
         echo "[RuView] Starting: $path"
@@ -30,5 +44,5 @@ for path in /usr/local/bin/sensing_server /app/sensing_server /app/server /usr/l
     fi
 done
 
-echo "[RuView] ERROR: Could not find server binary. Check the image."
+echo "[RuView] ERROR: Could not find server binary."
 exit 1
