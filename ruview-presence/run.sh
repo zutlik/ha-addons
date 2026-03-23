@@ -30,19 +30,35 @@ fi
 echo "[RuView] Restart Home Assistant once to activate the sensors."
 
 # ── 3. Start the RuView server ───────────────────────────────────────────────
-for bin in sensing_server wifi-densepose sensing-server server; do
+# Try PATH first (covers sensing-server with dash, underscore variants, etc.)
+for bin in sensing-server sensing_server wifi-densepose server; do
     if command -v "$bin" &>/dev/null; then
         echo "[RuView] Starting: $bin"
         exec "$bin"
     fi
 done
 
-for path in /usr/local/bin/sensing_server /app/sensing_server /app/server /usr/local/bin/server; do
+# Try known absolute paths
+for path in \
+    /usr/local/bin/sensing-server \
+    /usr/local/bin/sensing_server \
+    /app/sensing-server \
+    /app/sensing_server \
+    /app/server \
+    /usr/local/bin/server; do
     if [ -x "$path" ]; then
         echo "[RuView] Starting: $path"
         exec "$path"
     fi
 done
+
+# Last resort: find any ELF binary that looks like the server
+FOUND=$(find /usr/local/bin /app /opt -maxdepth 2 -type f -executable 2>/dev/null \
+    | grep -E 'sensing|densepose|server|wifi' | head -1)
+if [ -n "$FOUND" ]; then
+    echo "[RuView] Starting (found): $FOUND"
+    exec "$FOUND"
+fi
 
 echo "[RuView] ERROR: Could not find server binary."
 exit 1

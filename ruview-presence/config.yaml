@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: RuView WiFi Presence
-version: "1.0.3"
+version: "1.0.4"
 slug: ruview-presence
 description: WiFi-based human presence detection using RSSI. No camera or extra hardware needed — uses the Pi's built-in WiFi card.
 url: "https://github.com/zutlik/ha-addons/tree/main/ruview-presence"
