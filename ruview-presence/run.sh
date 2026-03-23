@@ -46,8 +46,16 @@ fi
 # bypassing any shell environment inheritance quirks.
 start_server() {
     local bin="$1"
-    echo "[RuView] Starting: $bin with CSI_SOURCE=$CSI_SOURCE"
-    exec env "CSI_SOURCE=$CSI_SOURCE" "$bin"
+    # Map "wifi" to "linux" on Linux — the binary uses "linux" for the
+    # nl80211/iw-based WiFi RSSI probe on Linux platforms, whereas "wifi"
+    # is the identifier used on macOS/Windows builds.
+    local effective_source="$CSI_SOURCE"
+    if [ "$CSI_SOURCE" = "wifi" ] && [ "$(uname -s)" = "Linux" ]; then
+        effective_source="linux"
+        echo "[RuView] Remapping CSI_SOURCE wifi -> linux (Linux platform)"
+    fi
+    echo "[RuView] Starting: $bin --source $effective_source"
+    exec env "CSI_SOURCE=$effective_source" "$bin" --source "$effective_source"
 }
 
 # Try PATH first
