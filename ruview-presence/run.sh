@@ -29,7 +29,19 @@ fi
 
 echo "[RuView] Restart Home Assistant once to activate the sensors."
 
-# ── 3. Start the RuView server ───────────────────────────────────────────────
+# ── 3. Read CSI_SOURCE from HA addon options (/data/options.json) ─────────────
+# HA does NOT inject options as env vars automatically — must read explicitly.
+OPTIONS="/data/options.json"
+if [ -f "$OPTIONS" ]; then
+    CSI_SOURCE=$(python3 -c "import json,sys; print(json.load(open('$OPTIONS')).get('CSI_SOURCE','wifi'))" 2>/dev/null || echo "wifi")
+    export CSI_SOURCE
+    echo "[RuView] CSI_SOURCE=$CSI_SOURCE (from addon options)"
+else
+    export CSI_SOURCE="${CSI_SOURCE:-wifi}"
+    echo "[RuView] CSI_SOURCE=$CSI_SOURCE (default)"
+fi
+
+# ── 4. Start the RuView server ───────────────────────────────────────────────
 # Try PATH first (covers sensing-server with dash, underscore variants, etc.)
 for bin in sensing-server sensing_server wifi-densepose server; do
     if command -v "$bin" &>/dev/null; then
