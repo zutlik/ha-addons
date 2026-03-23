@@ -3,7 +3,7 @@
 # Restart Home Assistant once after first addon start to activate these sensors.
 
 rest:
-  - resource: http://localhost:3000/api/v1/pose/current
+  - resource: http://localhost:8080/api/v1/pose/current
     scan_interval: 20
     sensor:
       - name: "RuView Person Count"
@@ -27,7 +27,7 @@ rest:
         value_template: "{{ value_json.source | default('unknown') }}"
         icon: mdi:wifi-settings
 
-  - resource: http://localhost:3000/health
+  - resource: http://localhost:8080/health
     scan_interval: 60
     sensor:
       - name: "RuView Status"
