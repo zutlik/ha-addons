@@ -42,11 +42,18 @@ else
 fi
 
 # ── 4. Start the RuView server ───────────────────────────────────────────────
-# Try PATH first (covers sensing-server with dash, underscore variants, etc.)
+# Use 'exec env' to explicitly pass CSI_SOURCE into the binary,
+# bypassing any shell environment inheritance quirks.
+start_server() {
+    local bin="$1"
+    echo "[RuView] Starting: $bin with CSI_SOURCE=$CSI_SOURCE"
+    exec env "CSI_SOURCE=$CSI_SOURCE" "$bin"
+}
+
+# Try PATH first
 for bin in sensing-server sensing_server wifi-densepose server; do
     if command -v "$bin" &>/dev/null; then
-        echo "[RuView] Starting: $bin"
-        exec "$bin"
+        start_server "$bin"
     fi
 done
 
@@ -59,17 +66,15 @@ for path in \
     /app/server \
     /usr/local/bin/server; do
     if [ -x "$path" ]; then
-        echo "[RuView] Starting: $path"
-        exec "$path"
+        start_server "$path"
     fi
 done
 
-# Last resort: find any ELF binary that looks like the server
+# Last resort: scan filesystem
 FOUND=$(find /usr/local/bin /app /opt -maxdepth 2 -type f -executable 2>/dev/null \
     | grep -E 'sensing|densepose|server|wifi' | head -1)
 if [ -n "$FOUND" ]; then
-    echo "[RuView] Starting (found): $FOUND"
-    exec "$FOUND"
+    start_server "$FOUND"
 fi
 
 echo "[RuView] ERROR: Could not find server binary."
