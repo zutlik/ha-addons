@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.4 - Updated setup documentation
+- Rewrite DOCS.md to reflect the automated setup flow
+- Step-by-step guide: configure → login via Web UI → restart → done
+- Documents automatic Telegram plugin setup, pairing flow, and credentials copy shortcut
+
 ## v1.0.3 - Auto Telegram setup
 - After first login, automatically runs plugin marketplace add → plugin install → /telegram:configure
 - Uses marker file to skip setup on subsequent restarts (re-runs only if token changes)
