@@ -111,7 +111,7 @@ If you already use Claude Code on your Mac or PC and want to skip `claude login`
 ```bash
 # Run this on your Mac/PC:
 scp ~/.claude/.credentials.json \
-  root@homeassistant.local:/data/addon_data/local_claude-code/.claude/
+  root@homeassistant.local:/data/addon_data/local_claude-code/claude/.claude/
 ```
 
 Then restart the add-on — it will detect the credentials and proceed directly to Telegram setup.

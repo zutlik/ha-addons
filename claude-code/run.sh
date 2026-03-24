@@ -1,33 +1,44 @@
 #!/bin/bash
 # Claude Code Add-on entrypoint
-# Manages: update check, Telegram plugin setup, CLAUDE.md, ttyd terminal, Claude daemon
 #
-# NOTE: setup steps (npm, ttyd, auth check) run as root.
-# All `claude` invocations run as the non-root `claude` user because
-# --dangerously-skip-permissions refuses to run as root.
+# /data is owned by HA Supervisor (root) — we never chown it.
+# All claude-owned state lives under /data/claude/ which we create
+# with the right ownership before switching to the non-root `claude` user.
 
 set -e
 
 echo "[claude-code] Starting Claude Code Add-on..."
 
 # ============================================================
-# Persistent paths: /data survives container rebuilds in HA
+# Paths
+# /data/options.json  — written by HA Supervisor (root-owned, read-only for us)
+# /data/claude/       — our persistent state, owned by the claude user
 # ============================================================
-export HOME="/data"
-export NPM_GLOBAL="/data/npm-global"
-export PATH="$NPM_GLOBAL/bin:/root/.bun/bin:$PATH"
+CLAUDE_HOME="/data/claude"
+NPM_GLOBAL="$CLAUDE_HOME/npm-global"
+CREDENTIALS="$CLAUDE_HOME/.claude/.credentials.json"
+TELEGRAM_MARKER="$CLAUDE_HOME/.claude/.telegram_plugin_configured"
 
-mkdir -p "$NPM_GLOBAL" /data/.claude/channels/telegram
+# Create our subdirectory tree and hand it to the claude user
+mkdir -p \
+    "$NPM_GLOBAL" \
+    "$CLAUDE_HOME/.claude/channels/telegram" \
+    "$CLAUDE_HOME/.npm"
+chown -R claude:claude "$CLAUDE_HOME"
+
+# npm global prefix (runs as root for the update check, still writes to claude-owned dir)
+export HOME="$CLAUDE_HOME"
+export NPM_GLOBAL
+export PATH="$NPM_GLOBAL/bin:/root/.bun/bin:$PATH"
 npm config set prefix "$NPM_GLOBAL" 2>/dev/null || true
 
 # ============================================================
-# Read options from HA supervisor
+# Read options from HA supervisor (/data/options.json is root-owned)
 # ============================================================
 OPTIONS="/data/options.json"
 
 get_option() {
-    local key="$1"
-    local default="$2"
+    local key="$1" default="$2"
     if [ -f "$OPTIONS" ]; then
         val=$(jq -r ".$key // empty" "$OPTIONS" 2>/dev/null)
         echo "${val:-$default}"
@@ -41,10 +52,10 @@ WORK_DIR=$(get_option "WORK_DIR" "/share/claude-workspace")
 AUTO_UPDATE=$(get_option "AUTO_UPDATE_CHECK" "true")
 
 mkdir -p "$WORK_DIR"
+chown claude:claude "$WORK_DIR" 2>/dev/null || true
 
 # ============================================================
-# Smart update check: only download when a newer version exists
-# (runs as root — npm global installs are fine as root)
+# Smart update check (runs as root — npm is fine as root)
 # ============================================================
 if [ "$AUTO_UPDATE" = "true" ]; then
     echo "[claude-code] Checking for Claude Code updates..."
@@ -54,6 +65,7 @@ if [ "$AUTO_UPDATE" = "true" ]; then
     if [ "$INSTALLED" = "none" ] || [ "$INSTALLED" != "$LATEST" ]; then
         echo "[claude-code] Installing Claude Code $LATEST (was: $INSTALLED)..."
         npm install -g @anthropic-ai/claude-code@latest
+        chown -R claude:claude "$NPM_GLOBAL"
         echo "[claude-code] Claude Code installed: $(claude --version 2>/dev/null || echo 'unknown')"
     else
         echo "[claude-code] Claude Code $INSTALLED is up to date."
@@ -61,11 +73,11 @@ if [ "$AUTO_UPDATE" = "true" ]; then
 fi
 
 # ============================================================
-# Write Telegram token to .env (always keep in sync with config)
+# Write Telegram token to .env (keep in sync with config)
 # ============================================================
 if [ -n "$TELEGRAM_TOKEN" ]; then
-    mkdir -p /data/.claude/channels/telegram
-    echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN" > /data/.claude/channels/telegram/.env
+    echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN" > "$CLAUDE_HOME/.claude/channels/telegram/.env"
+    chown claude:claude "$CLAUDE_HOME/.claude/channels/telegram/.env"
 fi
 
 # ============================================================
@@ -106,20 +118,12 @@ Keep `memory.md` concise (aim for under 200 lines). Prioritize actionable contex
 - You have broad permissions - use them responsibly
 - When writing automations or scripts for HA, test them before declaring success
 CLAUDEMD
+    chown claude:claude "$WORK_DIR/CLAUDE.md" 2>/dev/null || true
     echo "[claude-code] Created CLAUDE.md in $WORK_DIR"
 fi
 
 # ============================================================
-# Hand /data ownership to the claude user so credentials,
-# npm-global binaries, and channel config are all accessible.
-# ============================================================
-chown -R claude:claude /data
-chown -R claude:claude "$WORK_DIR" 2>/dev/null || true
-
-# ============================================================
-# Start ttyd web terminal (always on - used for login + interactive access)
-# HA ingress injects INGRESS_PATH (e.g. /api/hassio_ingress/<token>)
-# ttyd must be told this base-path so assets and WS connect correctly.
+# Start ttyd web terminal (always on)
 # ============================================================
 INGRESS_ENTRY="${INGRESS_PATH:-}"
 ttyd \
@@ -132,57 +136,36 @@ TTYD_PID=$!
 echo "[claude-code] Web terminal started (pid=$TTYD_PID) on port 7681 (ingress: ${INGRESS_ENTRY:-none})"
 
 # ============================================================
-# Check authentication - credentials live at /data/.claude/.credentials.json
+# Check authentication
 # ============================================================
-if [ ! -f "/data/.claude/.credentials.json" ]; then
+if [ ! -f "$CREDENTIALS" ]; then
     echo "[claude-code] ============================================================"
     echo "[claude-code] NOT AUTHENTICATED"
     echo "[claude-code] Open the add-on Web UI and run: claude login"
     echo "[claude-code] After login, restart this add-on."
     echo "[claude-code] ============================================================"
-    # Keep ttyd running so the user can authenticate
     wait $TTYD_PID
     exit 0
 fi
 
 # ============================================================
-# Helper: run a command as the non-root `claude` user.
-# Passes HOME, NPM_GLOBAL, PATH and BUN location through.
+# One-time Telegram plugin setup
+# Re-runs only when the token changes.
 # ============================================================
-run_as_claude() {
-    su -s /bin/bash claude -c "
-        export HOME=/data
-        export NPM_GLOBAL=/data/npm-global
-        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-        $1
-    "
-}
-
-# ============================================================
-# One-time Telegram plugin setup (runs automatically after first login)
-#
-# Marker file tracks whether setup was done for the current token.
-# If the token changes in config, the marker is stale → re-run setup.
-# ============================================================
-TELEGRAM_MARKER="/data/.claude/.telegram_plugin_configured"
 CONFIGURED_TOKEN=""
 [ -f "$TELEGRAM_MARKER" ] && CONFIGURED_TOKEN=$(cat "$TELEGRAM_MARKER")
 
 if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED_TOKEN" != "$TELEGRAM_TOKEN" ]; then
     echo "[claude-code] Running one-time Telegram plugin setup..."
-
-    # Pipe the setup commands into a headless Claude session as non-root.
-    # /exit ensures Claude quits after executing them.
-    # timeout 180s guards against any command hanging indefinitely.
     {
         echo "/plugin marketplace add anthropics/claude-plugins-official"
         echo "/plugin install telegram@claude-plugins-official"
         echo "/telegram:configure $TELEGRAM_TOKEN"
         echo "/exit"
     } | timeout 180 su -s /bin/bash claude -c "
-        export HOME=/data
-        export NPM_GLOBAL=/data/npm-global
-        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        export HOME=$CLAUDE_HOME
+        export NPM_GLOBAL=$NPM_GLOBAL
+        export PATH=$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
         cd '$WORK_DIR' && claude --dangerously-skip-permissions --no-color
     " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
@@ -192,11 +175,7 @@ if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED_TOKEN" != "$TELEGRAM_TOKEN" ]; the
 fi
 
 # ============================================================
-# Start Claude Code daemon as non-root `claude` user
-# --continue:                    resume last session
-# --dangerously-skip-permissions: headless/unattended operation
-# --remote-control:              register a session URL at claude.ai/code
-# --channels:                    Telegram (only if token configured)
+# Start Claude Code daemon as non-root claude user
 # ============================================================
 CHANNELS_ARG=""
 if [ -n "$TELEGRAM_TOKEN" ]; then
@@ -205,14 +184,12 @@ if [ -n "$TELEGRAM_TOKEN" ]; then
 fi
 
 echo "[claude-code] Starting Claude Code in $WORK_DIR ..."
-echo "[claude-code] Remote control session URL will appear in the logs below."
-echo "[claude-code] It is also saved to /data/remote_control_url.txt and shown as an HA notification."
+echo "[claude-code] Remote control URL will appear in the logs and as an HA notification."
 
-# Run as non-root, pipe output through URL extractor for remote-control link
 su -s /bin/bash claude -c "
-    export HOME=/data
-    export NPM_GLOBAL=/data/npm-global
-    export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+    export HOME=$CLAUDE_HOME
+    export NPM_GLOBAL=$NPM_GLOBAL
+    export PATH=$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
     cd '$WORK_DIR' && claude \
         --continue \
         --dangerously-skip-permissions \
@@ -221,16 +198,14 @@ su -s /bin/bash claude -c "
 " 2>&1 | while IFS= read -r line; do
     echo "[claude] $line"
 
-    # Capture remote-control session URL (https://app.claude.com/rc/<id>)
     if echo "$line" | grep -qE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+'; then
         URL=$(echo "$line" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
-        echo "$URL" > /data/remote_control_url.txt
+        echo "$URL" > "$CLAUDE_HOME/remote_control_url.txt"
 
         echo "[claude-code] ========================================================"
         echo "[claude-code] REMOTE CONTROL URL: $URL"
         echo "[claude-code] ========================================================"
 
-        # Create/update persistent HA dashboard notification
         curl -sf -X POST \
             -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
             -H "Content-Type: application/json" \

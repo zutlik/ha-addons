@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.8 - Move claude state to /data/claude/
+- All claude-owned files now live under /data/claude/ (not /data/)
+- /data is owned by HA Supervisor — we never chown it anymore
+- Eliminates "Operation not permitted" errors on startup
+- credentials, npm-global, channels, marker files all under /data/claude/
+
 ## v1.0.7 - Run claude as non-root user
 - Create non-root `claude` user in image — fixes `--dangerously-skip-permissions` root rejection
 - All `claude` invocations run via `su claude` with proper HOME/PATH environment
