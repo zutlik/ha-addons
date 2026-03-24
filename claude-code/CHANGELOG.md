@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1 - Fix Web UI
+- Switch to HA ingress with WebSocket streaming — fixes empty page on "Open Web UI"
+- ttyd now receives correct base-path from HA ingress proxy
+
 ## v1.0.0 - Initial Release
 
 - Persistent Claude Code daemon with `--continue` flag
