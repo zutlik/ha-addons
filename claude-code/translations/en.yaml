@@ -1,0 +1,17 @@
+configuration:
+  TELEGRAM_BOT_TOKEN:
+    name: Telegram Bot Token
+    description: >-
+      Bot token from @BotFather. Enables Claude Code to receive prompts and
+      send responses via Telegram. Leave empty to disable Telegram.
+  WORK_DIR:
+    name: Work Directory
+    description: >-
+      Directory where Claude Code runs and stores files.
+      Defaults to /share/claude-workspace.
+  AUTO_UPDATE_CHECK:
+    name: Auto-update Check
+    description: >-
+      Check for a newer Claude Code version on each startup.
+      Only downloads if a newer version is available; the binary is cached
+      in persistent storage so subsequent restarts are fast.

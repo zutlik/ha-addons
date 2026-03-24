@@ -1,0 +1,37 @@
+# https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
+name: Claude Code
+version: "v1.0.0"
+slug: claude-code
+description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
+url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
+arch:
+  - aarch64
+  - amd64
+init: false
+
+# Web UI opens the ttyd terminal (used for initial claude login and interactive access)
+webui: http://[HOST]:[PORT:7681]
+
+ports:
+  7681/tcp: 7681
+
+map:
+  - share:rw
+
+options:
+  TELEGRAM_BOT_TOKEN: ""
+  WORK_DIR: "/share/claude-workspace"
+  AUTO_UPDATE_CHECK: true
+
+schema:
+  TELEGRAM_BOT_TOKEN: "str?"
+  WORK_DIR: "str?"
+  AUTO_UPDATE_CHECK: "bool?"
+
+# Needs full network access: Anthropic API, Telegram polling, npm registry
+host_network: false
+
+# Persistent data: /data is automatically persistent in HA add-ons
+# - /data/.claude/ → Claude credentials and config
+# - /data/npm-global/ → Claude Code binary (persists across restarts)
+# - /data/remote_control_url.txt → Latest session URL
