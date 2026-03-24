@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.7 - Run claude as non-root user
+- Create non-root `claude` user in image — fixes `--dangerously-skip-permissions` root rejection
+- All `claude` invocations run via `su claude` with proper HOME/PATH environment
+- Grant passwordless sudo so claude can escalate when needed
+- Transfer /data and workspace ownership to claude user on startup
+
 ## v1.0.6 - Fix unknown option --cwd
 - Replace `--cwd` (not a valid Claude Code flag) with `cd` before invoking claude
 

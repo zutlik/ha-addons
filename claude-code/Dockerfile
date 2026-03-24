@@ -27,6 +27,18 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:$PATH"
 
+# Create non-root user for running claude.
+# --dangerously-skip-permissions refuses to run as root, so all claude
+# invocations must use this user. Bun lives in /root/.bun, so we open
+# its permissions so the claude user can execute it.
+# passwordless sudo lets claude escalate when needed (e.g. system tasks).
+RUN apt-get update && apt-get install -y sudo && rm -rf /var/lib/apt/lists/* && \
+    useradd -m -u 1000 -s /bin/bash claude && \
+    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
+    chmod 0440 /etc/sudoers.d/claude && \
+    chmod 755 /root && \
+    chmod -R a+rX /root/.bun
+
 # Install ttyd (web terminal) - architecture-aware
 # BUILD_ARCH from HA is: amd64, aarch64, armv7, armhf
 RUN case "${BUILD_ARCH}" in \

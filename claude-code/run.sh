@@ -1,6 +1,10 @@
 #!/bin/bash
 # Claude Code Add-on entrypoint
 # Manages: update check, Telegram plugin setup, CLAUDE.md, ttyd terminal, Claude daemon
+#
+# NOTE: setup steps (npm, ttyd, auth check) run as root.
+# All `claude` invocations run as the non-root `claude` user because
+# --dangerously-skip-permissions refuses to run as root.
 
 set -e
 
@@ -40,6 +44,7 @@ mkdir -p "$WORK_DIR"
 
 # ============================================================
 # Smart update check: only download when a newer version exists
+# (runs as root — npm global installs are fine as root)
 # ============================================================
 if [ "$AUTO_UPDATE" = "true" ]; then
     echo "[claude-code] Checking for Claude Code updates..."
@@ -105,6 +110,13 @@ CLAUDEMD
 fi
 
 # ============================================================
+# Hand /data ownership to the claude user so credentials,
+# npm-global binaries, and channel config are all accessible.
+# ============================================================
+chown -R claude:claude /data
+chown -R claude:claude "$WORK_DIR" 2>/dev/null || true
+
+# ============================================================
 # Start ttyd web terminal (always on - used for login + interactive access)
 # HA ingress injects INGRESS_PATH (e.g. /api/hassio_ingress/<token>)
 # ttyd must be told this base-path so assets and WS connect correctly.
@@ -134,6 +146,19 @@ if [ ! -f "/data/.claude/.credentials.json" ]; then
 fi
 
 # ============================================================
+# Helper: run a command as the non-root `claude` user.
+# Passes HOME, NPM_GLOBAL, PATH and BUN location through.
+# ============================================================
+run_as_claude() {
+    su -s /bin/bash claude -c "
+        export HOME=/data
+        export NPM_GLOBAL=/data/npm-global
+        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        $1
+    "
+}
+
+# ============================================================
 # One-time Telegram plugin setup (runs automatically after first login)
 #
 # Marker file tracks whether setup was done for the current token.
@@ -146,31 +171,32 @@ CONFIGURED_TOKEN=""
 if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED_TOKEN" != "$TELEGRAM_TOKEN" ]; then
     echo "[claude-code] Running one-time Telegram plugin setup..."
 
-    # Pipe the four setup commands into a headless Claude session.
+    # Pipe the setup commands into a headless Claude session as non-root.
     # /exit ensures Claude quits after executing them.
-    # We use --no-color to keep the log readable.
     # timeout 180s guards against any command hanging indefinitely.
     {
         echo "/plugin marketplace add anthropics/claude-plugins-official"
         echo "/plugin install telegram@claude-plugins-official"
         echo "/telegram:configure $TELEGRAM_TOKEN"
         echo "/exit"
-    } | timeout 180 bash -c "cd '$WORK_DIR' && claude \
-            --dangerously-skip-permissions \
-            --no-color" 2>&1 \
-        | while IFS= read -r line; do echo "[telegram-setup] $line"; done
+    } | timeout 180 su -s /bin/bash claude -c "
+        export HOME=/data
+        export NPM_GLOBAL=/data/npm-global
+        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        cd '$WORK_DIR' && claude --dangerously-skip-permissions --no-color
+    " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
-    # Persist the token hash so we don't re-run setup on the next restart
     echo "$TELEGRAM_TOKEN" > "$TELEGRAM_MARKER"
+    chown claude:claude "$TELEGRAM_MARKER"
     echo "[claude-code] Telegram plugin setup complete."
 fi
 
 # ============================================================
-# Start Claude Code daemon
-# --continue:                   resume last session (preserves conversation history)
-# --dangerously-skip-permissions: needed for headless/unattended operation
-# --remote-control:             register a session URL at claude.ai/code
-# --channels:                   Telegram integration (only if token is configured)
+# Start Claude Code daemon as non-root `claude` user
+# --continue:                    resume last session
+# --dangerously-skip-permissions: headless/unattended operation
+# --remote-control:              register a session URL at claude.ai/code
+# --channels:                    Telegram (only if token configured)
 # ============================================================
 CHANNELS_ARG=""
 if [ -n "$TELEGRAM_TOKEN" ]; then
@@ -182,21 +208,20 @@ echo "[claude-code] Starting Claude Code in $WORK_DIR ..."
 echo "[claude-code] Remote control session URL will appear in the logs below."
 echo "[claude-code] It is also saved to /data/remote_control_url.txt and shown as an HA notification."
 
-# Pipe claude output through a URL extractor:
-#   - every line is forwarded to the HA supervisor log
-#   - the remote-control session URL is saved to /data/remote_control_url.txt
-#   - an HA persistent notification with a clickable link is created/updated
-cd "$WORK_DIR"
-claude \
-    --continue \
-    --dangerously-skip-permissions \
-    --remote-control \
-    $CHANNELS_ARG 2>&1 | \
-while IFS= read -r line; do
+# Run as non-root, pipe output through URL extractor for remote-control link
+su -s /bin/bash claude -c "
+    export HOME=/data
+    export NPM_GLOBAL=/data/npm-global
+    export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+    cd '$WORK_DIR' && claude \
+        --continue \
+        --dangerously-skip-permissions \
+        --remote-control \
+        $CHANNELS_ARG
+" 2>&1 | while IFS= read -r line; do
     echo "[claude] $line"
 
-    # Claude prints the remote-control URL on startup, e.g.:
-    # https://app.claude.com/rc/<session-id>
+    # Capture remote-control session URL (https://app.claude.com/rc/<id>)
     if echo "$line" | grep -qE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+'; then
         URL=$(echo "$line" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
         echo "$URL" > /data/remote_control_url.txt
@@ -205,7 +230,7 @@ while IFS= read -r line; do
         echo "[claude-code] REMOTE CONTROL URL: $URL"
         echo "[claude-code] ========================================================"
 
-        # Create/update a persistent HA dashboard notification with a clickable link
+        # Create/update persistent HA dashboard notification
         curl -sf -X POST \
             -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
             -H "Content-Type: application/json" \
