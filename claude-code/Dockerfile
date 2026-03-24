@@ -5,7 +5,7 @@ FROM ${BUILD_FROM}
 
 ARG BUILD_ARCH=amd64
 
-# Install dependencies: curl, gnupg, jq, ca-certificates
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     procps \
     unzip \
+    git \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS via NodeSource

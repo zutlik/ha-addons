@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.0.2 - Fix plugin marketplace
+- Add `git` and `openssh-client` to image — required for `claude /plugin marketplace add`
+
 ## v1.0.1 - Fix Web UI
 - Switch to HA ingress with WebSocket streaming — fixes empty page on "Open Web UI"
 - ttyd now receives correct base-path from HA ingress proxy
