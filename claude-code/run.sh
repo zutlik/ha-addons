@@ -106,14 +106,18 @@ fi
 
 # ============================================================
 # Start ttyd web terminal (always on - used for login + interactive access)
+# HA ingress injects INGRESS_PATH (e.g. /api/hassio_ingress/<token>)
+# ttyd must be told this base-path so assets and WS connect correctly.
 # ============================================================
+INGRESS_ENTRY="${INGRESS_PATH:-}"
 ttyd \
     --writable \
     --port 7681 \
     --interface 0.0.0.0 \
+    ${INGRESS_ENTRY:+--base-path "${INGRESS_ENTRY}"} \
     bash &
 TTYD_PID=$!
-echo "[claude-code] Web terminal started (pid=$TTYD_PID) on port 7681"
+echo "[claude-code] Web terminal started (pid=$TTYD_PID) on port 7681 (ingress: ${INGRESS_ENTRY:-none})"
 
 # ============================================================
 # Check authentication - credentials live at /data/.claude/.credentials.json

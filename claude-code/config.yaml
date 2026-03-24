@@ -9,11 +9,11 @@ arch:
   - amd64
 init: false
 
-# Web UI opens the ttyd terminal (used for initial claude login and interactive access)
-webui: http://[HOST]:[PORT:7681]
-
-ports:
-  7681/tcp: 7681
+# Ingress proxies the ttyd terminal through HA's own web server (no port mapping needed)
+# ingress_stream: true is required for WebSocket (ttyd uses WS for the terminal)
+ingress: true
+ingress_port: 7681
+ingress_stream: true
 
 map:
   - share:rw
