@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.0.6 - Fix unknown option --cwd
+- Replace `--cwd` (not a valid Claude Code flag) with `cd` before invoking claude
+
 ## v1.0.5 - Add --remote-control flag
 - Start Claude daemon with `--remote-control` flag
 - Session URL printed prominently in the add-on log with a clear banner

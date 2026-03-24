@@ -155,10 +155,9 @@ if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED_TOKEN" != "$TELEGRAM_TOKEN" ]; the
         echo "/plugin install telegram@claude-plugins-official"
         echo "/telegram:configure $TELEGRAM_TOKEN"
         echo "/exit"
-    } | timeout 180 claude \
+    } | timeout 180 bash -c "cd '$WORK_DIR' && claude \
             --dangerously-skip-permissions \
-            --no-color \
-            --cwd "$WORK_DIR" 2>&1 \
+            --no-color" 2>&1 \
         | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
     # Persist the token hash so we don't re-run setup on the next restart
@@ -187,12 +186,12 @@ echo "[claude-code] It is also saved to /data/remote_control_url.txt and shown a
 #   - every line is forwarded to the HA supervisor log
 #   - the remote-control session URL is saved to /data/remote_control_url.txt
 #   - an HA persistent notification with a clickable link is created/updated
+cd "$WORK_DIR"
 claude \
     --continue \
     --dangerously-skip-permissions \
     --remote-control \
-    $CHANNELS_ARG \
-    --cwd "$WORK_DIR" 2>&1 | \
+    $CHANNELS_ARG 2>&1 | \
 while IFS= read -r line; do
     echo "[claude] $line"
 
