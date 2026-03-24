@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.5 - Add --remote-control flag
+- Start Claude daemon with `--remote-control` flag
+- Session URL printed prominently in the add-on log with a clear banner
+- Session URL saved to `/data/remote_control_url.txt`
+- HA persistent notification updated with clickable link and copyable URL
+
 ## v1.0.4 - Updated setup documentation
 - Rewrite DOCS.md to reflect the automated setup flow
 - Step-by-step guide: configure → login via Web UI → restart → done

@@ -168,9 +168,10 @@ fi
 
 # ============================================================
 # Start Claude Code daemon
-# --continue: always resume last session (preserves conversation history)
+# --continue:                   resume last session (preserves conversation history)
 # --dangerously-skip-permissions: needed for headless/unattended operation
-# --channels: Telegram integration (only if token is configured)
+# --remote-control:             register a session URL at claude.ai/code
+# --channels:                   Telegram integration (only if token is configured)
 # ============================================================
 CHANNELS_ARG=""
 if [ -n "$TELEGRAM_TOKEN" ]; then
@@ -179,34 +180,40 @@ if [ -n "$TELEGRAM_TOKEN" ]; then
 fi
 
 echo "[claude-code] Starting Claude Code in $WORK_DIR ..."
+echo "[claude-code] Remote control session URL will appear in the logs below."
+echo "[claude-code] It is also saved to /data/remote_control_url.txt and shown as an HA notification."
 
-# Run claude, pipe output through a URL extractor so the remote control
-# session URL is saved and exposed as an HA persistent notification.
-# tee /proc/1/fd/1 ensures output also appears in the HA supervisor log.
+# Pipe claude output through a URL extractor:
+#   - every line is forwarded to the HA supervisor log
+#   - the remote-control session URL is saved to /data/remote_control_url.txt
+#   - an HA persistent notification with a clickable link is created/updated
 claude \
     --continue \
     --dangerously-skip-permissions \
+    --remote-control \
     $CHANNELS_ARG \
     --cwd "$WORK_DIR" 2>&1 | \
 while IFS= read -r line; do
-    # Forward every line to the supervisor log
     echo "[claude] $line"
 
-    # Detect remote control session URL printed by Claude on startup
-    # Format: https://app.claude.com/rc/<id> (or similar)
+    # Claude prints the remote-control URL on startup, e.g.:
+    # https://app.claude.com/rc/<session-id>
     if echo "$line" | grep -qE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+'; then
         URL=$(echo "$line" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
         echo "$URL" > /data/remote_control_url.txt
-        echo "[claude-code] Remote control URL saved: $URL"
 
-        # Create a persistent notification in Home Assistant dashboard
+        echo "[claude-code] ========================================================"
+        echo "[claude-code] REMOTE CONTROL URL: $URL"
+        echo "[claude-code] ========================================================"
+
+        # Create/update a persistent HA dashboard notification with a clickable link
         curl -sf -X POST \
             -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
             -H "Content-Type: application/json" \
             "http://supervisor/core/api/services/persistent_notification/create" \
             -d "{
                 \"title\": \"Claude Code - Remote Control\",
-                \"message\": \"Session ready. [Open remote control]($URL)\",
+                \"message\": \"Session is ready.\\n\\n[Open remote control]($URL)\\n\\nOr copy the URL:\\n\`$URL\`\",
                 \"notification_id\": \"claude_code_rc_url\"
             }" > /dev/null || true
     fi
