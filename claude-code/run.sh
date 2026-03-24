@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code Add-on entrypoint
-# Manages: update check, Telegram config, CLAUDE.md, ttyd terminal, Claude daemon
+# Manages: update check, Telegram plugin setup, CLAUDE.md, ttyd terminal, Claude daemon
 
 set -e
 
@@ -56,11 +56,11 @@ if [ "$AUTO_UPDATE" = "true" ]; then
 fi
 
 # ============================================================
-# Configure Telegram channel
+# Write Telegram token to .env (always keep in sync with config)
 # ============================================================
 if [ -n "$TELEGRAM_TOKEN" ]; then
+    mkdir -p /data/.claude/channels/telegram
     echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN" > /data/.claude/channels/telegram/.env
-    echo "[claude-code] Telegram channel configured."
 fi
 
 # ============================================================
@@ -131,6 +131,39 @@ if [ ! -f "/data/.claude/.credentials.json" ]; then
     # Keep ttyd running so the user can authenticate
     wait $TTYD_PID
     exit 0
+fi
+
+# ============================================================
+# One-time Telegram plugin setup (runs automatically after first login)
+#
+# Marker file tracks whether setup was done for the current token.
+# If the token changes in config, the marker is stale → re-run setup.
+# ============================================================
+TELEGRAM_MARKER="/data/.claude/.telegram_plugin_configured"
+CONFIGURED_TOKEN=""
+[ -f "$TELEGRAM_MARKER" ] && CONFIGURED_TOKEN=$(cat "$TELEGRAM_MARKER")
+
+if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED_TOKEN" != "$TELEGRAM_TOKEN" ]; then
+    echo "[claude-code] Running one-time Telegram plugin setup..."
+
+    # Pipe the four setup commands into a headless Claude session.
+    # /exit ensures Claude quits after executing them.
+    # We use --no-color to keep the log readable.
+    # timeout 180s guards against any command hanging indefinitely.
+    {
+        echo "/plugin marketplace add anthropics/claude-plugins-official"
+        echo "/plugin install telegram@claude-plugins-official"
+        echo "/telegram:configure $TELEGRAM_TOKEN"
+        echo "/exit"
+    } | timeout 180 claude \
+            --dangerously-skip-permissions \
+            --no-color \
+            --cwd "$WORK_DIR" 2>&1 \
+        | while IFS= read -r line; do echo "[telegram-setup] $line"; done
+
+    # Persist the token hash so we don't re-run setup on the next restart
+    echo "$TELEGRAM_TOKEN" > "$TELEGRAM_MARKER"
+    echo "[claude-code] Telegram plugin setup complete."
 fi
 
 # ============================================================

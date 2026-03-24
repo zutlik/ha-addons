@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.3 - Auto Telegram setup
+- After first login, automatically runs plugin marketplace add → plugin install → /telegram:configure
+- Uses marker file to skip setup on subsequent restarts (re-runs only if token changes)
+
 ## v1.0.2 - Fix plugin marketplace
 - Add `git` and `openssh-client` to image — required for `claude /plugin marketplace add`
 
