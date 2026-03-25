@@ -1,10 +1,9 @@
 #!/bin/bash
 # Claude Code Add-on entrypoint
 #
-# HA add-on containers have no CAP_CHOWN — chown always fails.
-# Strategy: mkdir /data/claude as root with chmod 777, then run
-# everything inside it as the non-root `claude` user so all files
-# are created with the correct ownership from the start.
+# Requires capabilities: SETUID, SETGID  (set in config.yaml)
+# so that `su claude` can drop root privileges before invoking claude.
+# (--dangerously-skip-permissions refuses to run as root.)
 
 set -e
 
@@ -13,14 +12,14 @@ echo "[claude-code] Starting Claude Code Add-on..."
 CLAUDE_HOME="/data/claude"
 
 # ============================================================
-# Bootstrap: create /data/claude and make it writable by the
-# claude user. chmod is allowed (CAP_FOWNER); chown is not.
+# Bootstrap: create /data/claude writable by the claude user.
+# CAP_CHOWN is not available, so we use chmod 777 instead.
 # ============================================================
 mkdir -p "$CLAUDE_HOME"
 chmod 777 "$CLAUDE_HOME"
 
 # ============================================================
-# Read options from HA supervisor (root-owned, read as root)
+# Read options (root-owned /data/options.json, read as root)
 # ============================================================
 OPTIONS="/data/options.json"
 
@@ -42,42 +41,10 @@ mkdir -p "$WORK_DIR"
 chmod 777 "$WORK_DIR" 2>/dev/null || true
 
 # ============================================================
-# All remaining setup runs as the claude user so every file
-# created under /data/claude/ is claude-owned. No chown needed.
+# Write CLAUDE.md as root, BEFORE the su block.
+# (Kept separate so backticks in the content are never inside an
+# outer unquoted heredoc where the shell would try to execute them.)
 # ============================================================
-su -s /bin/bash claude << SETUP_EOF
-set -e
-export HOME="$CLAUDE_HOME"
-export NPM_GLOBAL="$CLAUDE_HOME/npm-global"
-export PATH="\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH"
-
-# Create subdirectory tree as claude user (correct ownership from birth)
-mkdir -p "\$NPM_GLOBAL" \
-         "$CLAUDE_HOME/.claude/channels/telegram" \
-         "$CLAUDE_HOME/.npm"
-
-npm config set prefix "\$NPM_GLOBAL" 2>/dev/null || true
-
-# --- Smart update check ---
-if [ "$AUTO_UPDATE" = "true" ]; then
-    echo "[claude-code] Checking for Claude Code updates..."
-    INSTALLED=\$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "none")
-    LATEST=\$(npm show @anthropic-ai/claude-code version 2>/dev/null || echo "\$INSTALLED")
-    if [ "\$INSTALLED" = "none" ] || [ "\$INSTALLED" != "\$LATEST" ]; then
-        echo "[claude-code] Installing Claude Code \$LATEST (was: \$INSTALLED)..."
-        npm install -g @anthropic-ai/claude-code@latest
-        echo "[claude-code] Claude Code installed: \$(claude --version 2>/dev/null || echo 'unknown')"
-    else
-        echo "[claude-code] Claude Code \$INSTALLED is up to date."
-    fi
-fi
-
-# --- Telegram token ---
-if [ -n "$TELEGRAM_TOKEN" ]; then
-    echo "TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN" > "$CLAUDE_HOME/.claude/channels/telegram/.env"
-fi
-
-# --- CLAUDE.md ---
 if [ ! -f "$WORK_DIR/CLAUDE.md" ]; then
     cat > "$WORK_DIR/CLAUDE.md" << 'CLAUDEMD'
 # Claude Code - Persistent Agent Instructions
@@ -115,10 +82,43 @@ Keep `memory.md` concise (aim for under 200 lines). Prioritize actionable contex
 CLAUDEMD
     echo "[claude-code] Created CLAUDE.md in $WORK_DIR"
 fi
-SETUP_EOF
 
 # ============================================================
-# Start ttyd web terminal (runs as root — fine for ttyd)
+# Run setup as the claude user so all files under /data/claude/
+# are created with claude ownership (no chown needed).
+# ============================================================
+su -s /bin/bash claude -c "
+    set -e
+    export HOME=$CLAUDE_HOME
+    export NPM_GLOBAL=$CLAUDE_HOME/npm-global
+    export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+
+    mkdir -p \$NPM_GLOBAL \
+             $CLAUDE_HOME/.claude/channels/telegram \
+             $CLAUDE_HOME/.npm
+
+    npm config set prefix \$NPM_GLOBAL 2>/dev/null || true
+
+    if [ '$AUTO_UPDATE' = 'true' ]; then
+        echo '[claude-code] Checking for Claude Code updates...'
+        INSTALLED=\$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo none)
+        LATEST=\$(npm show @anthropic-ai/claude-code version 2>/dev/null || echo \$INSTALLED)
+        if [ \"\$INSTALLED\" = none ] || [ \"\$INSTALLED\" != \"\$LATEST\" ]; then
+            echo \"[claude-code] Installing Claude Code \$LATEST (was: \$INSTALLED)...\"
+            npm install -g @anthropic-ai/claude-code@latest
+            echo \"[claude-code] Installed: \$(claude --version 2>/dev/null || echo unknown)\"
+        else
+            echo \"[claude-code] Claude Code \$INSTALLED is up to date.\"
+        fi
+    fi
+
+    if [ -n '$TELEGRAM_TOKEN' ]; then
+        echo 'TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN' > $CLAUDE_HOME/.claude/channels/telegram/.env
+    fi
+"
+
+# ============================================================
+# Start ttyd web terminal
 # ============================================================
 INGRESS_ENTRY="${INGRESS_PATH:-}"
 ttyd \

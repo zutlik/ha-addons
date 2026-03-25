@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Claude Code
-version: "v1.0.9"
+version: "v1.1.0"
 slug: claude-code
 description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
 url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
@@ -28,10 +28,9 @@ schema:
   WORK_DIR: "str?"
   AUTO_UPDATE_CHECK: "bool?"
 
-# Needs full network access: Anthropic API, Telegram polling, npm registry
-host_network: false
-
-# Persistent data: /data is automatically persistent in HA add-ons
-# - /data/.claude/ → Claude credentials and config
-# - /data/npm-global/ → Claude Code binary (persists across restarts)
-# - /data/remote_control_url.txt → Latest session URL
+# SETUID + SETGID are required so run.sh can use `su claude` to drop
+# privileges before invoking claude (--dangerously-skip-permissions
+# refuses to run as root).
+capabilities:
+  - SETUID
+  - SETGID

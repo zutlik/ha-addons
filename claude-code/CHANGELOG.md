@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.0 - Fix su and heredoc backtick expansion
+- Add SETUID + SETGID capabilities to config.yaml so `su claude` works
+- Move CLAUDE.md write outside the su heredoc block to its own
+  single-quoted heredoc — backticks in the content no longer get
+  executed by the outer shell
+- Setup (npm install, .env) still runs as claude user via su
+
 ## v1.0.9 - Fix ownership without chown
 - HA containers have no CAP_CHOWN — chown always fails even as root
 - New strategy: mkdir /data/claude as root with chmod 777, then run
