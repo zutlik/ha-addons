@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8.1 - Default to Sonnet 4.6
+- Daemon and Telegram setup now run with `--model claude-sonnet-4-6`
+  instead of the (more expensive) Opus default.
+
 ## v1.8.0 - DAEMON_AUTOSTART flag for manual prompt acceptance
 - New `DAEMON_AUTOSTART` config option (default true). When set to
   false, run.sh skips both the Telegram plugin setup and the claude

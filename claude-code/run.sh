@@ -253,7 +253,7 @@ if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
         export TERM=xterm-256color
         export NO_COLOR=1
-        cd '$WORK_DIR' && exec script -qefc 'claude --dangerously-skip-permissions' /dev/null
+        cd '$WORK_DIR' && exec script -qefc 'claude --model claude-sonnet-4-6 --dangerously-skip-permissions' /dev/null
     " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
     SETUP_EXIT=${PIPESTATUS[1]}
@@ -313,7 +313,7 @@ su -s /bin/bash claude -c "
     export NPM_GLOBAL=$CLAUDE_HOME/npm-global
     export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
     export NO_COLOR=1
-    cd '$WORK_DIR' && exec script -qefc \"claude $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\" /dev/null
+    cd '$WORK_DIR' && exec script -qefc \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\" /dev/null
 " 2>&1 | while IFS= read -r line; do
     echo "[claude] $line"
 
