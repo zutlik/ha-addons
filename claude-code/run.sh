@@ -18,6 +18,9 @@ CLAUDE_HOME="/data/claude"
 # ============================================================
 mkdir -p "$CLAUDE_HOME"
 chmod 777 "$CLAUDE_HOME"
+# Legacy boots created subtrees as root; without CAP_CHOWN we can't chown,
+# so make everything under /data/claude writable by the claude user.
+chmod -R a+rwX "$CLAUDE_HOME" 2>/dev/null || true
 
 # ============================================================
 # Read options (root-owned /data/options.json, read as root)
@@ -100,12 +103,18 @@ su -s /bin/bash claude -c "
 
     npm config set prefix \$NPM_GLOBAL 2>/dev/null || true
 
-    if [ '$AUTO_UPDATE' = 'true' ]; then
+    if ! command -v claude >/dev/null 2>&1; then
+        echo '[claude-code] Claude Code not installed yet, installing...'
+        npm install -g @anthropic-ai/claude-code@latest
+        echo \"[claude-code] Installed: \$(claude --version 2>/dev/null || echo unknown)\"
+    elif [ '$AUTO_UPDATE' = 'true' ]; then
         echo '[claude-code] Checking for Claude Code updates...'
-        INSTALLED=\$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo none)
-        LATEST=\$(npm show @anthropic-ai/claude-code version 2>/dev/null || echo \$INSTALLED)
-        if [ \"\$INSTALLED\" = none ] || [ \"\$INSTALLED\" != \"\$LATEST\" ]; then
-            echo \"[claude-code] Installing Claude Code \$LATEST (was: \$INSTALLED)...\"
+        INSTALLED=\$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+        LATEST=\$(npm show @anthropic-ai/claude-code version 2>/dev/null || true)
+        if [ -z \"\$LATEST\" ]; then
+            echo \"[claude-code] npm show failed (network?); keeping installed \$INSTALLED.\"
+        elif [ \"\$INSTALLED\" != \"\$LATEST\" ]; then
+            echo \"[claude-code] Updating Claude Code \$INSTALLED -> \$LATEST...\"
             npm install -g @anthropic-ai/claude-code@latest
             echo \"[claude-code] Installed: \$(claude --version 2>/dev/null || echo unknown)\"
         else

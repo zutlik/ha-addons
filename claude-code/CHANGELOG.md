@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.4.0 - Fix install-from-empty and legacy perms
+- Update check now branches on `command -v claude` first — if claude
+  isn't installed, always install (prior logic silently treated
+  INSTALLED="" and LATEST="" as "up to date" and skipped).
+- Recursively `chmod -R a+rwX /data/claude` at root bootstrap so
+  subdirs created by previous root-run boots are writable by the
+  claude user (fixes `.env: Permission denied`).
+- Better npm show failure handling: report and keep existing install
+  rather than silently skipping.
+
 ## v1.3.0 - Fix su failure at the AppArmor layer
 - Root cause of `su: cannot set groups: Operation not permitted`:
   apparmor.txt had a `# Capabilities` comment but no actual rules, so
