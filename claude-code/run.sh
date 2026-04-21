@@ -134,7 +134,6 @@ su -s /bin/bash claude -c "
     export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
 
     mkdir -p \$NPM_GLOBAL \
-             $CLAUDE_HOME/.claude/channels/telegram \
              $CLAUDE_HOME/.npm
 
     npm config set prefix \$NPM_GLOBAL 2>/dev/null || true
@@ -158,9 +157,6 @@ su -s /bin/bash claude -c "
         fi
     fi
 
-    if [ -n '$TELEGRAM_TOKEN' ]; then
-        echo 'TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN' > $CLAUDE_HOME/.claude/channels/telegram/.env
-    fi
 "
 
 # ============================================================
@@ -207,71 +203,6 @@ if [ "$DAEMON_AUTOSTART" != "true" ]; then
     echo "[claude-code] ============================================================"
     wait $TTYD_PID
     exit 0
-fi
-
-# ============================================================
-# Telegram plugin setup. Marker includes a SETUP_VERSION so bumping it
-# forces a re-run across upgrades (earlier versions silently marked
-# setup "complete" even when it failed, so we need a way to re-run).
-#
-# The setup command is wrapped in `script` to give claude a PTY —
-# without it, claude drops into --print mode and never processes our
-# piped slash commands.
-# ============================================================
-SETUP_VERSION=2
-TELEGRAM_MARKER="$CLAUDE_HOME/.claude/.telegram_plugin_configured"
-CONFIGURED=""
-[ -f "$TELEGRAM_MARKER" ] && CONFIGURED=$(cat "$TELEGRAM_MARKER")
-EXPECTED="${SETUP_VERSION}:${TELEGRAM_TOKEN}"
-
-if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
-    echo "[claude-code] Running Telegram plugin setup (version $SETUP_VERSION)..."
-
-    # The setup claude renders a TUI prompt for the "Bypass Permissions" warning.
-    # Just piping input upfront doesn't work — claude consumes it before the
-    # prompt is ready. Instead we drive the TUI with timed keystrokes:
-    #   - wait for startup
-    #   - down-arrow + Enter to select "2. Yes, I accept"
-    #   - wait again, then send slash commands with delays between them
-    (
-        sleep 6              # let claude boot and render the bypass prompt
-        printf '\033[B\r'    # down arrow to highlight option 2
-        sleep 1
-        printf '\r'          # Enter to confirm
-        sleep 4              # let claude settle after accepting
-        printf '/plugin marketplace add anthropics/claude-plugins-official\r'
-        sleep 10
-        printf '/plugin install telegram@claude-plugins-official\r'
-        sleep 20             # plugin install can take a while (git clone + bun)
-        printf '/telegram:configure %s\r' "$TELEGRAM_TOKEN"
-        sleep 5
-        printf '/exit\r'
-        sleep 2
-    ) | timeout 180 su -s /bin/bash claude -c "
-        export HOME=$CLAUDE_HOME
-        export NPM_GLOBAL=$CLAUDE_HOME/npm-global
-        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-        export TERM=xterm-256color
-        export NO_COLOR=1
-        cd '$WORK_DIR' && exec script -qefc 'claude --model claude-sonnet-4-6 --dangerously-skip-permissions' /dev/null
-    " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
-
-    SETUP_EXIT=${PIPESTATUS[1]}
-
-    if [ "$SETUP_EXIT" -eq 0 ]; then
-        echo "$EXPECTED" > "$TELEGRAM_MARKER"
-        echo "[claude-code] Telegram plugin setup complete."
-    else
-        echo "[claude-code] Telegram plugin setup FAILED (exit $SETUP_EXIT). Will retry on next boot."
-        rm -f "$TELEGRAM_MARKER"
-    fi
-
-    # Debug: log what claude persisted to .claude.json after setup, so we can
-    # see the exact key name used for bypass-permissions acceptance.
-    if command -v jq >/dev/null; then
-        echo "[claude-code] Top-level keys in .claude.json after setup:"
-        jq -r 'keys[]' "$CLAUDE_JSON" 2>/dev/null | sed 's/^/[claude-code]   /'
-    fi
 fi
 
 # ============================================================

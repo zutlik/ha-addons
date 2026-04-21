@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.8.2 - Drop automatic Telegram plugin setup
+- Remove the TUI-driven plugin install/configure block from run.sh.
+  It was brittle (timed keystrokes, `script` PTY wrapper, claude going
+  conversational and ignoring `/exit`) and unreliable.
+- The daemon still starts with `--channels plugin:telegram@claude-plugins-official`
+  when TELEGRAM_BOT_TOKEN is set — the plugin just needs to be installed
+  manually once via the Web UI (see DOCS.md for steps).
+- Bot token and chat ID are still read from config for the startup URL DM.
+
 ## v1.8.1 - Default to Sonnet 4.6
 - Daemon and Telegram setup now run with `--model claude-sonnet-4-6`
   instead of the (more expensive) Opus default.
