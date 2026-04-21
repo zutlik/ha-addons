@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.0 - Fix su failure (setgroups EPERM)
+- Previous `capabilities: [SETUID, SETGID]` in config.yaml was silently
+  ignored — HA's schema uses `privileged:` and that allowlist does not
+  include SETUID/SETGID. Swap to `full_access: true`, the only documented
+  option that restores CAP_SETGID so `su claude` can run setgroups().
+- Fixes: `su: cannot set groups: Operation not permitted` in add-on log
+  that prevented Claude from ever starting on v1.0.9 and v1.1.0.
+
 ## v1.1.0 - Fix su and heredoc backtick expansion
 - Add SETUID + SETGID capabilities to config.yaml so `su claude` works
 - Move CLAUDE.md write outside the su heredoc block to its own

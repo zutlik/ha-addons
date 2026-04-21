@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Claude Code
-version: "v1.1.0"
+version: "v1.2.0"
 slug: claude-code
 description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
 url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
@@ -28,9 +28,9 @@ schema:
   WORK_DIR: "str?"
   AUTO_UPDATE_CHECK: "bool?"
 
-# SETUID + SETGID are required so run.sh can use `su claude` to drop
-# privileges before invoking claude (--dangerously-skip-permissions
-# refuses to run as root).
-capabilities:
-  - SETUID
-  - SETGID
+# full_access is required so run.sh can use `su claude` to drop privileges.
+# HA's add-on schema drops CAP_SETGID by default and its `privileged:` allowlist
+# does NOT include SETUID/SETGID — full_access is the only documented path to
+# restore them. (--dangerously-skip-permissions refuses to run as root, so we
+# must be able to drop to the claude user.)
+full_access: true

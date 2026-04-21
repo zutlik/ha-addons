@@ -1,9 +1,10 @@
 #!/bin/bash
 # Claude Code Add-on entrypoint
 #
-# Requires capabilities: SETUID, SETGID  (set in config.yaml)
-# so that `su claude` can drop root privileges before invoking claude.
-# (--dangerously-skip-permissions refuses to run as root.)
+# Requires full_access: true (set in config.yaml) so that the container
+# has CAP_SETUID + CAP_SETGID, allowing `su claude` to drop root privileges
+# before invoking claude. (--dangerously-skip-permissions refuses to run
+# as root.)
 
 set -e
 
