@@ -190,12 +190,17 @@ fi
 echo "[claude-code] Starting Claude Code in $WORK_DIR ..."
 echo "[claude-code] Remote control URL will appear in the logs and as an HA notification."
 
+# Restart loop: if claude exits (crash, stale session, SIGHUP), wait a bit and
+# restart. Prevents the whole container from bouncing on every claude crash.
+# NOTE: --continue removed — it was resuming sessions with stale deferred-tool
+# markers and crashing. Cross-session context is handled by CLAUDE.md +
+# memory.md protocol, which doesn't need claude's internal session resume.
+while true; do
 su -s /bin/bash claude -c "
     export HOME=$CLAUDE_HOME
     export NPM_GLOBAL=$CLAUDE_HOME/npm-global
     export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
     cd '$WORK_DIR' && claude \
-        --continue \
         --dangerously-skip-permissions \
         --remote-control \
         $CHANNELS_ARG
@@ -220,4 +225,8 @@ su -s /bin/bash claude -c "
                 \"notification_id\": \"claude_code_rc_url\"
             }" > /dev/null || true
     fi
+done
+
+echo "[claude-code] Claude exited. Restarting in 10s (Ctrl-C-equivalent to stop the add-on)..."
+sleep 10
 done

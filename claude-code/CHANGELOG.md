@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.6.0 - Stop claude crash bouncing the whole container
+- Drop `--continue` from the daemon invocation. It was trying to resume
+  sessions with stale deferred-tool markers (a side effect of the
+  earlier crash loops) and exiting immediately with
+  `No deferred tool marker found in the resumed session`.
+  Cross-session context is handled by the CLAUDE.md / memory.md protocol,
+  which does not depend on claude's internal session resume.
+- Wrap the claude launch in a restart loop with a 10s cooldown so a
+  claude crash no longer takes down the whole container — Web UI, ttyd
+  session, and logs stay up while claude restarts.
+
 ## v1.5.0 - Web UI shell now runs as claude user
 - ttyd previously spawned `bash` as root, so `claude: command not
   found` in the Web UI (root's PATH doesn't include the claude user's
