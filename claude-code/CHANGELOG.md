@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.1 - Fix claude-attach password prompt
+- The Web UI shell already runs as the claude user, so `su claude` inside
+  claude-attach was prompting for claude's password. Skip the `su` when
+  already running as claude; fall back to passwordless `sudo -u claude`
+  only when invoked from a different user.
+
 ## v1.9.0 - Attachable claude daemon via tmux
 - Daemon now runs inside a detached tmux session named `claude`. You can
   attach from the Web UI shell to interact with the live TUI — accept
