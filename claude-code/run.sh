@@ -155,28 +155,52 @@ if [ ! -f "$CLAUDE_HOME/.claude/.credentials.json" ]; then
 fi
 
 # ============================================================
-# One-time Telegram plugin setup (re-runs only when token changes)
+# Telegram plugin setup. Marker includes a SETUP_VERSION so bumping it
+# forces a re-run across upgrades (earlier versions silently marked
+# setup "complete" even when it failed, so we need a way to re-run).
+#
+# The setup command is wrapped in `script` to give claude a PTY —
+# without it, claude drops into --print mode and never processes our
+# piped slash commands.
 # ============================================================
+SETUP_VERSION=2
 TELEGRAM_MARKER="$CLAUDE_HOME/.claude/.telegram_plugin_configured"
-CONFIGURED_TOKEN=""
-[ -f "$TELEGRAM_MARKER" ] && CONFIGURED_TOKEN=$(cat "$TELEGRAM_MARKER")
+CONFIGURED=""
+[ -f "$TELEGRAM_MARKER" ] && CONFIGURED=$(cat "$TELEGRAM_MARKER")
+EXPECTED="${SETUP_VERSION}:${TELEGRAM_TOKEN}"
 
-if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED_TOKEN" != "$TELEGRAM_TOKEN" ]; then
-    echo "[claude-code] Running one-time Telegram plugin setup..."
+if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
+    echo "[claude-code] Running Telegram plugin setup (version $SETUP_VERSION)..."
+
+    SETUP_INPUT=$(mktemp)
+    chmod 644 "$SETUP_INPUT"
     {
         echo "/plugin marketplace add anthropics/claude-plugins-official"
+        echo "sleep-marker-1"  # give the marketplace add a moment
         echo "/plugin install telegram@claude-plugins-official"
+        echo "sleep-marker-2"
         echo "/telegram:configure $TELEGRAM_TOKEN"
+        echo "sleep-marker-3"
         echo "/exit"
-    } | timeout 180 su -s /bin/bash claude -c "
+    } > "$SETUP_INPUT"
+
+    timeout 180 su -s /bin/bash claude -c "
         export HOME=$CLAUDE_HOME
         export NPM_GLOBAL=$CLAUDE_HOME/npm-global
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-        cd '$WORK_DIR' && claude --dangerously-skip-permissions --no-color
+        cd '$WORK_DIR' && exec script -qefc 'claude --dangerously-skip-permissions --no-color' /dev/null < '$SETUP_INPUT'
     " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
-    echo "$TELEGRAM_TOKEN" > "$TELEGRAM_MARKER"
-    echo "[claude-code] Telegram plugin setup complete."
+    SETUP_EXIT=${PIPESTATUS[0]}
+    rm -f "$SETUP_INPUT"
+
+    if [ "$SETUP_EXIT" -eq 0 ]; then
+        echo "$EXPECTED" > "$TELEGRAM_MARKER"
+        echo "[claude-code] Telegram plugin setup complete."
+    else
+        echo "[claude-code] Telegram plugin setup FAILED (exit $SETUP_EXIT). Will retry on next boot."
+        rm -f "$TELEGRAM_MARKER"
+    fi
 fi
 
 # ============================================================

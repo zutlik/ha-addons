@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.7.2 - Actually install the Telegram plugin
+- Earlier versions silently wrote the "Telegram plugin configured"
+  marker even when `/plugin install` had failed (claude was exiting
+  before processing the piped slash commands). So Telegram never
+  actually worked — the daemon ran but the channels plugin wasn't
+  installed or configured.
+- Wrap the plugin-setup claude invocation in `script` (same PTY fix as
+  v1.7.1) so slash commands actually process.
+- Only write the marker if claude's exit code is 0; delete it on failure
+  so we retry next boot.
+- Marker now includes a SETUP_VERSION — bumping it forces re-run across
+  upgrades. Current SETUP_VERSION=2, so v1.7.2 re-runs setup once even
+  if your previous install wrote a v1-format marker.
+
 ## v1.7.1 - Give claude a pseudo-TTY so it doesn't fall into --print mode
 - Without a TTY, claude auto-switches to --print mode and exits with
   "Input must be provided either through stdin or as a prompt argument".
