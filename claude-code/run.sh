@@ -285,17 +285,35 @@ while true; do
 
     # Background URL watcher: polls `tmux capture-pane -p`, which renders the
     # pane to plain text (no ANSI, no cursor codes) so grep matches reliably.
-    # Previous approach (tail pipe-pane output through sed) failed because
-    # tmux streams partial terminal redraws that can split the URL mid-line.
+    # If the URL doesn't land after N polls, dump a pane snapshot to the log
+    # so we can see what's actually there vs. what our regex expects.
     (
         URL_POSTED=""
+        POLL=0
+        DIAG_DUMPED=""
         while true; do
             sleep 3
+            POLL=$((POLL + 1))
             su -s /bin/bash claude -c "tmux has-session -t $TMUX_SESSION 2>/dev/null" || break
             [ -n "$URL_POSTED" ] && continue
-            SNAPSHOT=$(su -s /bin/bash claude -c "tmux capture-pane -t $TMUX_SESSION -p -S -5000 2>/dev/null" 2>/dev/null)
+            SNAPSHOT=$(su -s /bin/bash claude -c "tmux capture-pane -t $TMUX_SESSION -p -S -5000" 2>&1)
+            CAP_EXIT=$?
+            if [ "$CAP_EXIT" -ne 0 ]; then
+                echo "[claude-code] capture-pane failed (exit $CAP_EXIT): $SNAPSHOT"
+                continue
+            fi
             URL=$(echo "$SNAPSHOT" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
-            [ -z "$URL" ] && continue
+            if [ -z "$URL" ]; then
+                # After ~15s with no URL, dump what we DO see so we can tune the
+                # regex / confirm the daemon actually rendered the URL.
+                if [ -z "$DIAG_DUMPED" ] && [ "$POLL" -ge 5 ]; then
+                    DIAG_DUMPED=yes
+                    echo "[claude-code] --- URL not found after ${POLL} polls; pane snapshot follows ---"
+                    echo "$SNAPSHOT" | tail -n 60 | sed 's/^/[pane] /'
+                    echo "[claude-code] --- end pane snapshot (will keep polling) ---"
+                fi
+                continue
+            fi
 
             URL_POSTED=yes
             echo "$URL" > "$CLAUDE_HOME/remote_control_url.txt"

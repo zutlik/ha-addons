@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.4 - URL watcher diagnostics
+- Telegram startup ping works in v1.9.3, but the URL DM still doesn't
+  fire — meaning the URL isn't being found in the tmux pane.
+- Watcher now logs capture-pane errors instead of swallowing stderr.
+- After ~15s with no URL match, watcher dumps the last 60 lines of the
+  pane to the add-on log (prefixed `[pane]`) so we can see what claude
+  actually rendered vs. what our regex expects.
+
 ## v1.9.3 - Telegram startup ping + diagnostics
 - Send a "Claude Code add-on starting up..." DM at the top of run.sh,
   before anything can go wrong with claude/URL extraction. Lets you
