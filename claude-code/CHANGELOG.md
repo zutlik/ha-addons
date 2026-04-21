@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.8.0 - DAEMON_AUTOSTART flag for manual prompt acceptance
+- New `DAEMON_AUTOSTART` config option (default true). When set to
+  false, run.sh skips both the Telegram plugin setup and the claude
+  daemon launch, leaving only ttyd running.
+- Recovery flow when claude is blocked on a TUI prompt (trust dialog,
+  bypass-permissions warning):
+  1. Set `DAEMON_AUTOSTART: false`, restart add-on.
+  2. Open the Web UI, run `claude --dangerously-skip-permissions`,
+     accept the prompts.
+  3. `/exit`, set `DAEMON_AUTOSTART: true`, restart.
+- Claude persists the prompt acceptances to ~/.claude.json, so future
+  daemon boots don't hit the prompts.
+
 ## v1.7.5 - Drive Telegram setup TUI with timed keystrokes
 - v1.7.4 piped "2\n" upfront, but claude consumes stdin before rendering
   the TUI prompt — so the keystroke arrived at nothing.

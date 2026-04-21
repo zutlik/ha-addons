@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Claude Code
-version: "v1.7.5"
+version: "v1.8.0"
 slug: claude-code
 description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
 url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
@@ -23,6 +23,7 @@ options:
   TELEGRAM_CHAT_ID: ""
   WORK_DIR: "/share/claude-workspace"
   AUTO_UPDATE_CHECK: true
+  DAEMON_AUTOSTART: true
 
 schema:
   TELEGRAM_BOT_TOKEN: "str?"
@@ -31,6 +32,11 @@ schema:
   TELEGRAM_CHAT_ID: "str?"
   WORK_DIR: "str?"
   AUTO_UPDATE_CHECK: "bool?"
+  # Set false to skip the automatic claude daemon launch. Use this to
+  # manually run `claude --dangerously-skip-permissions` via the Web UI
+  # to accept one-time prompts (trust, bypass-permissions warning). Flip
+  # back to true after prompts are accepted.
+  DAEMON_AUTOSTART: "bool?"
 
 # full_access is required so run.sh can use `su claude` to drop privileges.
 # HA's add-on schema drops CAP_SETGID by default and its `privileged:` allowlist

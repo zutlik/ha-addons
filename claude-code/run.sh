@@ -41,6 +41,7 @@ TELEGRAM_TOKEN=$(get_option "TELEGRAM_BOT_TOKEN" "")
 TELEGRAM_CHAT_ID=$(get_option "TELEGRAM_CHAT_ID" "")
 WORK_DIR=$(get_option "WORK_DIR" "/share/claude-workspace")
 AUTO_UPDATE=$(get_option "AUTO_UPDATE_CHECK" "true")
+DAEMON_AUTOSTART=$(get_option "DAEMON_AUTOSTART" "true")
 
 mkdir -p "$WORK_DIR"
 chmod 777 "$WORK_DIR" 2>/dev/null || true
@@ -183,6 +184,26 @@ if [ ! -f "$CLAUDE_HOME/.claude/.credentials.json" ]; then
     echo "[claude-code] NOT AUTHENTICATED"
     echo "[claude-code] Open the add-on Web UI and run: claude login"
     echo "[claude-code] After login, restart this add-on."
+    echo "[claude-code] ============================================================"
+    wait $TTYD_PID
+    exit 0
+fi
+
+# ============================================================
+# DAEMON_AUTOSTART=false → manual-setup mode: skip Telegram setup AND
+# the claude daemon launch, keep only ttyd running. Use this to open
+# the Web UI and manually run `claude --dangerously-skip-permissions`
+# to accept one-time TUI prompts (trust dialog, bypass-permissions
+# warning). After prompts are accepted and claude has persisted them,
+# flip DAEMON_AUTOSTART back to true.
+# ============================================================
+if [ "$DAEMON_AUTOSTART" != "true" ]; then
+    echo "[claude-code] ============================================================"
+    echo "[claude-code] DAEMON_AUTOSTART=false — not launching the claude daemon."
+    echo "[claude-code] Open the Web UI and run:"
+    echo "[claude-code]     claude --dangerously-skip-permissions"
+    echo "[claude-code] Accept any TUI prompts (down-arrow + Enter for option 2)."
+    echo "[claude-code] Then /exit, flip DAEMON_AUTOSTART to true, restart the add-on."
     echo "[claude-code] ============================================================"
     wait $TTYD_PID
     exit 0
