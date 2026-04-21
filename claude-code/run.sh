@@ -224,6 +224,13 @@ echo "[claude-code] Remote control URL will appear in the logs and as an HA noti
 # in under 15s while --continue is active, assume the session is corrupted
 # (e.g. stale deferred-tool marker from an unclean shutdown) and drop to
 # fresh-session mode for the rest of this boot.
+# The claude daemon runs inside a tmux session so you can attach to it from
+# the Web UI (run `claude-attach`) and interact with its TUI directly —
+# accept prompts, type messages, watch it work — then detach with Ctrl-b d.
+# tmux also provides the PTY that claude needs to stay in interactive mode.
+TMUX_SESSION=claude
+PIPE_LOG=/tmp/claude-pane.log
+
 TRY_CONTINUE=yes
 while true; do
     CONTINUE_FLAG=""
@@ -234,51 +241,68 @@ while true; do
 
     START_TS=$(date +%s)
 
-    # Wrap claude in `script` to allocate a pseudo-TTY. Without a TTY, claude
-    # switches to --print mode and exits because no prompt was given. The PTY
-    # keeps it in interactive mode so --channels and --remote-control work as
-    # a long-running daemon. `script -q` silences the start/end banner,
-    # `-e` propagates claude's exit code, `-f` flushes so our log is live.
-su -s /bin/bash claude -c "
-    export HOME=$CLAUDE_HOME
-    export NPM_GLOBAL=$CLAUDE_HOME/npm-global
-    export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-    export NO_COLOR=1
-    cd '$WORK_DIR' && exec script -qefc \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\" /dev/null
-" 2>&1 | while IFS= read -r line; do
-    echo "[claude] $line"
+    # Start the daemon inside a detached tmux session and tee its pane output
+    # to a log file that we tail for URL extraction.
+    su -s /bin/bash claude -c "
+        export HOME=$CLAUDE_HOME
+        export NPM_GLOBAL=$CLAUDE_HOME/npm-global
+        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        export NO_COLOR=1
+        tmux kill-session -t $TMUX_SESSION 2>/dev/null || true
+        : > $PIPE_LOG
+        cd '$WORK_DIR' && tmux new-session -d -s $TMUX_SESSION -x 200 -y 50 \
+            \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\"
+        tmux pipe-pane -t $TMUX_SESSION \"cat >> $PIPE_LOG\"
+    "
 
-    if echo "$line" | grep -qE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+'; then
-        URL=$(echo "$line" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
-        echo "$URL" > "$CLAUDE_HOME/remote_control_url.txt"
+    # Tail the pane log in the background and feed it to the URL extractor.
+    # sed strips ANSI CSI/OSC escape sequences so log lines stay readable.
+    (tail -n 0 -F "$PIPE_LOG" 2>/dev/null \
+        | sed -u $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g; s/\x1b\\][^\x07]*\x07//g; s/\r$//' \
+        | while IFS= read -r line; do
+        echo "[claude] $line"
 
-        echo "[claude-code] ========================================================"
-        echo "[claude-code] REMOTE CONTROL URL: $URL"
-        echo "[claude-code] ========================================================"
+        if echo "$line" | grep -qE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+'; then
+            URL=$(echo "$line" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
+            echo "$URL" > "$CLAUDE_HOME/remote_control_url.txt"
 
-        curl -sf -X POST \
-            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "http://supervisor/core/api/services/persistent_notification/create" \
-            -d "{
-                \"title\": \"Claude Code - Remote Control\",
-                \"message\": \"Session is ready.\\n\\n[Open remote control]($URL)\\n\\nOr copy the URL:\\n\`$URL\`\",
-                \"notification_id\": \"claude_code_rc_url\"
-            }" > /dev/null || true
+            echo "[claude-code] ========================================================"
+            echo "[claude-code] REMOTE CONTROL URL: $URL"
+            echo "[claude-code] ========================================================"
 
-        # DM the URL to Telegram if both bot token and chat ID are configured.
-        if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
             curl -sf -X POST \
-                "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-                --data-urlencode "text=Claude Code is ready. Remote control: ${URL}" \
-                --data-urlencode "disable_web_page_preview=true" \
-                > /dev/null \
-                && echo "[claude-code] Posted remote control URL to Telegram chat ${TELEGRAM_CHAT_ID}." \
-                || echo "[claude-code] Failed to post remote control URL to Telegram (check bot token / chat id)."
+                -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+                -H "Content-Type: application/json" \
+                "http://supervisor/core/api/services/persistent_notification/create" \
+                -d "{
+                    \"title\": \"Claude Code - Remote Control\",
+                    \"message\": \"Session is ready.\\n\\n[Open remote control]($URL)\\n\\nOr copy the URL:\\n\`$URL\`\",
+                    \"notification_id\": \"claude_code_rc_url\"
+                }" > /dev/null || true
+
+            if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+                curl -sf -X POST \
+                    "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+                    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                    --data-urlencode "text=Claude Code is ready. Remote control: ${URL}" \
+                    --data-urlencode "disable_web_page_preview=true" \
+                    > /dev/null \
+                    && echo "[claude-code] Posted remote control URL to Telegram chat ${TELEGRAM_CHAT_ID}." \
+                    || echo "[claude-code] Failed to post remote control URL to Telegram (check bot token / chat id)."
+            fi
         fi
-    fi
-done
+    done) &
+    TAIL_PID=$!
+
+    # Block until the tmux session dies (claude exited, or user ran
+    # `tmux kill-session`). Poll every 2s so restarts remain responsive.
+    while su -s /bin/bash claude -c "tmux has-session -t $TMUX_SESSION 2>/dev/null"; do
+        sleep 2
+    done
+
+    # Session gone — stop the tail so it doesn't survive into the next loop.
+    kill "$TAIL_PID" 2>/dev/null || true
+    wait "$TAIL_PID" 2>/dev/null || true
 
     DURATION=$(( $(date +%s) - START_TS ))
     if [ "$TRY_CONTINUE" = "yes" ] && [ "$DURATION" -lt 15 ]; then

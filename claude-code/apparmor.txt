@@ -33,8 +33,8 @@ profile claude-code flags=(attach_disconnected,mediate_deleted) {
   /etc/cont-finish.d/** rwix,
   /run/{,**} rwk,
   /dev/tty rw,
-  # `script` allocates a pseudo-TTY for the claude daemon so it stays in
-  # interactive mode (see run.sh). Needs access to the ptmx/pts device pair.
+  # tmux allocates pseudo-TTYs for the claude daemon and for attach clients
+  # (see run.sh, claude-attach). Needs access to the ptmx/pts device pair.
   /dev/ptmx rw,
   /dev/pts/** rw,
 
@@ -56,9 +56,10 @@ profile claude-code flags=(attach_disconnected,mediate_deleted) {
   # Bun runtime
   /root/.bun/{,**} rwix,
 
-  # ttyd web terminal + its claude-user shell wrapper
+  # ttyd web terminal + its claude-user shell wrapper + tmux attach helper
   /usr/local/bin/ttyd ix,
   /usr/local/bin/claude-shell rix,
+  /usr/local/bin/claude-attach rix,
 
   # Network (Anthropic API, Telegram, npm registry)
   network inet stream,

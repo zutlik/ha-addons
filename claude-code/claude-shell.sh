@@ -7,5 +7,8 @@ exec su -s /bin/bash claude -c '
     export NPM_GLOBAL=/data/claude/npm-global
     export PATH=$NPM_GLOBAL/bin:/root/.bun/bin:$PATH
     cd "$HOME" 2>/dev/null || cd /
+    if command -v tmux >/dev/null 2>&1 && tmux has-session -t claude 2>/dev/null; then
+        echo "Claude daemon is running. Run \"claude-attach\" to attach (Ctrl-b d to detach)."
+    fi
     exec bash
 '

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.9.0 - Attachable claude daemon via tmux
+- Daemon now runs inside a detached tmux session named `claude`. You can
+  attach from the Web UI shell to interact with the live TUI — accept
+  prompts, type messages, watch tool calls — then detach with Ctrl-b d
+  without killing the daemon.
+- New `claude-attach` helper: just run it in the Web UI shell. Falls back
+  gracefully if no session is running.
+- `claude-shell` prints a hint on launch when a daemon session is active.
+- Replaces the `script -qefc` PTY wrapper with tmux, which doubles as both
+  PTY provider (keeps claude in interactive mode) and attach surface.
+- URL extraction still works: `tmux pipe-pane` streams pane output to
+  /tmp/claude-pane.log, which a background `tail -F | sed` pipeline parses.
+- Dockerfile adds `tmux` package; apparmor.txt allows the new
+  /usr/local/bin/claude-attach binary.
+
 ## v1.8.2 - Drop automatic Telegram plugin setup
 - Remove the TUI-driven plugin install/configure block from run.sh.
   It was brittle (timed keystrokes, `script` PTY wrapper, claude going

@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     openssh-client \
+    tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 LTS via NodeSource
@@ -55,6 +56,7 @@ RUN case "${BUILD_ARCH}" in \
 # Copy entrypoint and the ttyd shell wrapper
 COPY run.sh /run.sh
 COPY claude-shell.sh /usr/local/bin/claude-shell
-RUN chmod +x /run.sh /usr/local/bin/claude-shell
+COPY claude-attach.sh /usr/local/bin/claude-attach
+RUN chmod +x /run.sh /usr/local/bin/claude-shell /usr/local/bin/claude-attach
 
 CMD ["/run.sh"]
