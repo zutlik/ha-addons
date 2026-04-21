@@ -209,12 +209,12 @@ if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
     SETUP_INPUT=$(mktemp)
     chmod 644 "$SETUP_INPUT"
     {
+        # Accept the "Bypass Permissions mode" warning (option 2 = Yes, I accept).
+        # Claude should persist this to .claude.json after the first accept.
+        echo "2"
         echo "/plugin marketplace add anthropics/claude-plugins-official"
-        echo "sleep-marker-1"  # give the marketplace add a moment
         echo "/plugin install telegram@claude-plugins-official"
-        echo "sleep-marker-2"
         echo "/telegram:configure $TELEGRAM_TOKEN"
-        echo "sleep-marker-3"
         echo "/exit"
     } > "$SETUP_INPUT"
 
@@ -235,6 +235,13 @@ if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
     else
         echo "[claude-code] Telegram plugin setup FAILED (exit $SETUP_EXIT). Will retry on next boot."
         rm -f "$TELEGRAM_MARKER"
+    fi
+
+    # Debug: log what claude persisted to .claude.json after setup, so we can
+    # see the exact key name used for bypass-permissions acceptance.
+    if command -v jq >/dev/null; then
+        echo "[claude-code] Top-level keys in .claude.json after setup:"
+        jq -r 'keys[]' "$CLAUDE_JSON" 2>/dev/null | sed 's/^/[claude-code]   /'
     fi
 fi
 

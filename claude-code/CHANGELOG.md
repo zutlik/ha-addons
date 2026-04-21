@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.7.4 - Accept bypass-permissions prompt in Telegram setup
+- Claude shows a second prompt on startup: "In Bypass Permissions mode...
+  Yes, I accept" — our `bypassPermissionsModeAccepted` guess in
+  .claude.json wasn't the right key. Prepend `2\n` to the Telegram
+  plugin setup's stdin so the setup claude auto-selects "Yes, I accept".
+- After setup runs once, claude should persist the acceptance to
+  .claude.json so the daemon no longer hits the prompt. Log the
+  top-level keys of .claude.json after setup so we can see the actual
+  key name for future debugging.
+
 ## v1.7.3 - Pre-accept workspace trust + drop removed --no-color flag
 - Claude on first launch in a workspace asks "Is this a project you
   trust?". Our headless daemon has no one to press 1, so it hung
