@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.5 - Drive Telegram setup TUI with timed keystrokes
+- v1.7.4 piped "2\n" upfront, but claude consumes stdin before rendering
+  the TUI prompt — so the keystroke arrived at nothing.
+- New approach: subshell with explicit sleeps that pace input to the
+  PTY. Wait 6s for bootup, send down-arrow+Enter to select option 2
+  (claude TUIs don't accept digit shortcuts), then slash commands with
+  delays between them.
+- Plugin install can take 20s (git clone + bun) so gave it room.
+
 ## v1.7.4 - Accept bypass-permissions prompt in Telegram setup
 - Claude shows a second prompt on startup: "In Bypass Permissions mode...
   Yes, I accept" — our `bypassPermissionsModeAccepted` guess in

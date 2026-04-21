@@ -206,28 +206,36 @@ EXPECTED="${SETUP_VERSION}:${TELEGRAM_TOKEN}"
 if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
     echo "[claude-code] Running Telegram plugin setup (version $SETUP_VERSION)..."
 
-    SETUP_INPUT=$(mktemp)
-    chmod 644 "$SETUP_INPUT"
-    {
-        # Accept the "Bypass Permissions mode" warning (option 2 = Yes, I accept).
-        # Claude should persist this to .claude.json after the first accept.
-        echo "2"
-        echo "/plugin marketplace add anthropics/claude-plugins-official"
-        echo "/plugin install telegram@claude-plugins-official"
-        echo "/telegram:configure $TELEGRAM_TOKEN"
-        echo "/exit"
-    } > "$SETUP_INPUT"
-
-    timeout 180 su -s /bin/bash claude -c "
+    # The setup claude renders a TUI prompt for the "Bypass Permissions" warning.
+    # Just piping input upfront doesn't work — claude consumes it before the
+    # prompt is ready. Instead we drive the TUI with timed keystrokes:
+    #   - wait for startup
+    #   - down-arrow + Enter to select "2. Yes, I accept"
+    #   - wait again, then send slash commands with delays between them
+    (
+        sleep 6              # let claude boot and render the bypass prompt
+        printf '\033[B\r'    # down arrow to highlight option 2
+        sleep 1
+        printf '\r'          # Enter to confirm
+        sleep 4              # let claude settle after accepting
+        printf '/plugin marketplace add anthropics/claude-plugins-official\r'
+        sleep 10
+        printf '/plugin install telegram@claude-plugins-official\r'
+        sleep 20             # plugin install can take a while (git clone + bun)
+        printf '/telegram:configure %s\r' "$TELEGRAM_TOKEN"
+        sleep 5
+        printf '/exit\r'
+        sleep 2
+    ) | timeout 180 su -s /bin/bash claude -c "
         export HOME=$CLAUDE_HOME
         export NPM_GLOBAL=$CLAUDE_HOME/npm-global
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        export TERM=xterm-256color
         export NO_COLOR=1
-        cd '$WORK_DIR' && exec script -qefc 'claude --dangerously-skip-permissions' /dev/null < '$SETUP_INPUT'
+        cd '$WORK_DIR' && exec script -qefc 'claude --dangerously-skip-permissions' /dev/null
     " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
-    SETUP_EXIT=${PIPESTATUS[0]}
-    rm -f "$SETUP_INPUT"
+    SETUP_EXIT=${PIPESTATUS[1]}
 
     if [ "$SETUP_EXIT" -eq 0 ]; then
         echo "$EXPECTED" > "$TELEGRAM_MARKER"
