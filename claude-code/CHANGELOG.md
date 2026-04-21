@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.7.3 - Pre-accept workspace trust + drop removed --no-color flag
+- Claude on first launch in a workspace asks "Is this a project you
+  trust?". Our headless daemon has no one to press 1, so it hung
+  forever. Fix: pre-write `~/.claude.json` with `hasTrustDialogAccepted`
+  and per-project `hasTrustDialogAccepted` set to true, merged with any
+  existing config via `jq`.
+- Claude Code removed/renamed the `--no-color` flag — Telegram plugin
+  setup was exiting with "unknown option '--no-color'". Drop the flag,
+  use `NO_COLOR=1` env var instead (de-facto standard).
+
 ## v1.7.2 - Actually install the Telegram plugin
 - Earlier versions silently wrote the "Telegram plugin configured"
   marker even when `/plugin install` had failed (claude was exiting

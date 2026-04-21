@@ -46,6 +46,40 @@ mkdir -p "$WORK_DIR"
 chmod 777 "$WORK_DIR" 2>/dev/null || true
 
 # ============================================================
+# Pre-accept the workspace trust dialog. Without this, claude shows
+# "Is this a project you trust?" on startup and our headless daemon
+# has no one to press 1. We write ~/.claude.json (HOME=/data/claude)
+# with the flags claude sets when you answer 1 interactively, merging
+# with any existing config (jq deep-merge).
+# ============================================================
+CLAUDE_JSON="$CLAUDE_HOME/.claude.json"
+[ ! -f "$CLAUDE_JSON" ] && echo '{}' > "$CLAUDE_JSON"
+chmod 666 "$CLAUDE_JSON" 2>/dev/null || true
+TRUST_PATCH=$(cat <<JSON
+{
+  "hasTrustDialogAccepted": true,
+  "hasCompletedOnboarding": true,
+  "bypassPermissionsModeAccepted": true,
+  "projects": {
+    "$WORK_DIR": {
+      "hasTrustDialogAccepted": true,
+      "hasCompletedProjectOnboarding": true,
+      "allowedTools": []
+    }
+  }
+}
+JSON
+)
+if MERGED=$(jq --argjson patch "$TRUST_PATCH" '. * $patch' "$CLAUDE_JSON" 2>/dev/null); then
+    echo "$MERGED" > "$CLAUDE_JSON"
+    echo "[claude-code] Pre-accepted workspace trust for $WORK_DIR."
+else
+    echo "$TRUST_PATCH" > "$CLAUDE_JSON"
+    echo "[claude-code] Wrote fresh .claude.json (existing was malformed)."
+fi
+chmod 666 "$CLAUDE_JSON" 2>/dev/null || true
+
+# ============================================================
 # Write CLAUDE.md as root, BEFORE the su block.
 # (Kept separate so backticks in the content are never inside an
 # outer unquoted heredoc where the shell would try to execute them.)
@@ -188,7 +222,8 @@ if [ -n "$TELEGRAM_TOKEN" ] && [ "$CONFIGURED" != "$EXPECTED" ]; then
         export HOME=$CLAUDE_HOME
         export NPM_GLOBAL=$CLAUDE_HOME/npm-global
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-        cd '$WORK_DIR' && exec script -qefc 'claude --dangerously-skip-permissions --no-color' /dev/null < '$SETUP_INPUT'
+        export NO_COLOR=1
+        cd '$WORK_DIR' && exec script -qefc 'claude --dangerously-skip-permissions' /dev/null < '$SETUP_INPUT'
     " 2>&1 | while IFS= read -r line; do echo "[telegram-setup] $line"; done
 
     SETUP_EXIT=${PIPESTATUS[0]}
@@ -241,6 +276,7 @@ su -s /bin/bash claude -c "
     export HOME=$CLAUDE_HOME
     export NPM_GLOBAL=$CLAUDE_HOME/npm-global
     export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+    export NO_COLOR=1
     cd '$WORK_DIR' && exec script -qefc \"claude $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\" /dev/null
 " 2>&1 | while IFS= read -r line; do
     echo "[claude] $line"
