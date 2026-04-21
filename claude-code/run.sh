@@ -208,15 +208,16 @@ while true; do
 
     START_TS=$(date +%s)
 
+    # Wrap claude in `script` to allocate a pseudo-TTY. Without a TTY, claude
+    # switches to --print mode and exits because no prompt was given. The PTY
+    # keeps it in interactive mode so --channels and --remote-control work as
+    # a long-running daemon. `script -q` silences the start/end banner,
+    # `-e` propagates claude's exit code, `-f` flushes so our log is live.
 su -s /bin/bash claude -c "
     export HOME=$CLAUDE_HOME
     export NPM_GLOBAL=$CLAUDE_HOME/npm-global
     export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-    cd '$WORK_DIR' && claude \
-        $CONTINUE_FLAG \
-        --dangerously-skip-permissions \
-        --remote-control \
-        $CHANNELS_ARG
+    cd '$WORK_DIR' && exec script -qefc \"claude $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\" /dev/null
 " 2>&1 | while IFS= read -r line; do
     echo "[claude] $line"
 

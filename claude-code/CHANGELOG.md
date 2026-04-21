@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7.1 - Give claude a pseudo-TTY so it doesn't fall into --print mode
+- Without a TTY, claude auto-switches to --print mode and exits with
+  "Input must be provided either through stdin or as a prompt argument".
+- Wrap the claude invocation in `script -qefc ... /dev/null` to allocate
+  a PTY, keeping claude in interactive/daemon mode for --channels and
+  --remote-control.
+- AppArmor: allow `/dev/ptmx` and `/dev/pts/**` for PTY allocation.
+
 ## v1.7.0 - DM the remote control URL to Telegram on each start
 - New `TELEGRAM_CHAT_ID` option. When set alongside `TELEGRAM_BOT_TOKEN`,
   the add-on DMs the remote control URL to that chat every time claude

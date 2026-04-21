@@ -33,6 +33,10 @@ profile claude-code flags=(attach_disconnected,mediate_deleted) {
   /etc/cont-finish.d/** rwix,
   /run/{,**} rwk,
   /dev/tty rw,
+  # `script` allocates a pseudo-TTY for the claude daemon so it stays in
+  # interactive mode (see run.sh). Needs access to the ptmx/pts device pair.
+  /dev/ptmx rw,
+  /dev/pts/** rw,
 
   # Bashio
   /usr/lib/bashio/** ix,
