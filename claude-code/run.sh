@@ -302,7 +302,7 @@ while true; do
                 echo "[claude-code] capture-pane failed (exit $CAP_EXIT): $SNAPSHOT"
                 continue
             fi
-            URL=$(echo "$SNAPSHOT" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
+            URL=$(echo "$SNAPSHOT" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9]+' | head -1)
             if [ -z "$URL" ]; then
                 # After ~15s with no URL, dump what we DO see so we can tune the
                 # regex / confirm the daemon actually rendered the URL.

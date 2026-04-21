@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.5 - Fix remote-control URL regex
+- Claude prints the URL as `https://claude.ai/code/session_<id>`, not
+  `/rc/<token>` — the old regex (carried over from an earlier CLI
+  version) never matched, so the URL DM / HA notification never fired.
+- Updated regex to match the current URL scheme.
+
 ## v1.9.4 - URL watcher diagnostics
 - Telegram startup ping works in v1.9.3, but the URL DM still doesn't
   fire — meaning the URL isn't being found in the tmux pane.
