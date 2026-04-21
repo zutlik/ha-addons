@@ -229,7 +229,6 @@ echo "[claude-code] Remote control URL will appear in the logs and as an HA noti
 # accept prompts, type messages, watch it work — then detach with Ctrl-b d.
 # tmux also provides the PTY that claude needs to stay in interactive mode.
 TMUX_SESSION=claude
-PIPE_LOG=/tmp/claude-pane.log
 
 TRY_CONTINUE=yes
 while true; do
@@ -241,31 +240,35 @@ while true; do
 
     START_TS=$(date +%s)
 
-    # Start the daemon inside a detached tmux session and tee its pane output
-    # to a log file that we tail for URL extraction.
+    # Start the daemon inside a detached tmux session.
     su -s /bin/bash claude -c "
         export HOME=$CLAUDE_HOME
         export NPM_GLOBAL=$CLAUDE_HOME/npm-global
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
         export NO_COLOR=1
         tmux kill-session -t $TMUX_SESSION 2>/dev/null || true
-        : > $PIPE_LOG
         cd '$WORK_DIR' && tmux new-session -d -s $TMUX_SESSION -x 200 -y 50 \
             \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\"
-        tmux pipe-pane -t $TMUX_SESSION \"cat >> $PIPE_LOG\"
     "
 
-    # Tail the pane log in the background and feed it to the URL extractor.
-    # sed strips ANSI CSI/OSC escape sequences so log lines stay readable.
-    (tail -n 0 -F "$PIPE_LOG" 2>/dev/null \
-        | sed -u $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g; s/\x1b\\][^\x07]*\x07//g; s/\r$//' \
-        | while IFS= read -r line; do
-        echo "[claude] $line"
+    echo "[claude-code] Daemon running in tmux session '$TMUX_SESSION'. Run 'claude-attach' from the Web UI to view."
 
-        if echo "$line" | grep -qE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+'; then
-            URL=$(echo "$line" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
+    # Background URL watcher: polls `tmux capture-pane -p`, which renders the
+    # pane to plain text (no ANSI, no cursor codes) so grep matches reliably.
+    # Previous approach (tail pipe-pane output through sed) failed because
+    # tmux streams partial terminal redraws that can split the URL mid-line.
+    (
+        URL_POSTED=""
+        while true; do
+            sleep 3
+            su -s /bin/bash claude -c "tmux has-session -t $TMUX_SESSION 2>/dev/null" || break
+            [ -n "$URL_POSTED" ] && continue
+            SNAPSHOT=$(su -s /bin/bash claude -c "tmux capture-pane -t $TMUX_SESSION -p -S -5000 2>/dev/null" 2>/dev/null)
+            URL=$(echo "$SNAPSHOT" | grep -oE 'https://[a-zA-Z0-9./_-]+/rc/[a-zA-Z0-9_-]+' | head -1)
+            [ -z "$URL" ] && continue
+
+            URL_POSTED=yes
             echo "$URL" > "$CLAUDE_HOME/remote_control_url.txt"
-
             echo "[claude-code] ========================================================"
             echo "[claude-code] REMOTE CONTROL URL: $URL"
             echo "[claude-code] ========================================================"
@@ -290,9 +293,9 @@ while true; do
                     && echo "[claude-code] Posted remote control URL to Telegram chat ${TELEGRAM_CHAT_ID}." \
                     || echo "[claude-code] Failed to post remote control URL to Telegram (check bot token / chat id)."
             fi
-        fi
-    done) &
-    TAIL_PID=$!
+        done
+    ) &
+    WATCHER_PID=$!
 
     # Block until the tmux session dies (claude exited, or user ran
     # `tmux kill-session`). Poll every 2s so restarts remain responsive.
@@ -300,9 +303,8 @@ while true; do
         sleep 2
     done
 
-    # Session gone — stop the tail so it doesn't survive into the next loop.
-    kill "$TAIL_PID" 2>/dev/null || true
-    wait "$TAIL_PID" 2>/dev/null || true
+    kill "$WATCHER_PID" 2>/dev/null || true
+    wait "$WATCHER_PID" 2>/dev/null || true
 
     DURATION=$(( $(date +%s) - START_TS ))
     if [ "$TRY_CONTINUE" = "yes" ] && [ "$DURATION" -lt 15 ]; then

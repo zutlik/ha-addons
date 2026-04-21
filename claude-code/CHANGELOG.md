@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.9.2 - Fix Telegram URL DM on startup
+- Previous URL extraction tailed `tmux pipe-pane` output through sed.
+  That failed because tmux streams partial terminal redraws (cursor
+  positioning, clear-line) that can split the URL across what the sed
+  filter sees as separate lines — so our regex never matched and the
+  Telegram DM never fired.
+- New approach: background watcher polls `tmux capture-pane -p` every 3s,
+  which renders the pane to plain rendered text (no ANSI, no partial
+  redraws). grep against that is reliable.
+- Side effect: claude's live TUI output is no longer streamed into the
+  add-on log. Use `claude-attach` from the Web UI to watch the daemon.
+
 ## v1.9.1 - Fix claude-attach password prompt
 - The Web UI shell already runs as the claude user, so `su claude` inside
   claude-attach was prompting for claude's password. Skip the `su` when
