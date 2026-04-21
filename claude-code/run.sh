@@ -192,15 +192,27 @@ echo "[claude-code] Remote control URL will appear in the logs and as an HA noti
 
 # Restart loop: if claude exits (crash, stale session, SIGHUP), wait a bit and
 # restart. Prevents the whole container from bouncing on every claude crash.
-# NOTE: --continue removed — it was resuming sessions with stale deferred-tool
-# markers and crashing. Cross-session context is handled by CLAUDE.md +
-# memory.md protocol, which doesn't need claude's internal session resume.
+#
+# --continue strategy: prefer resuming the latest conversation. If claude exits
+# in under 15s while --continue is active, assume the session is corrupted
+# (e.g. stale deferred-tool marker from an unclean shutdown) and drop to
+# fresh-session mode for the rest of this boot.
+TRY_CONTINUE=yes
 while true; do
+    CONTINUE_FLAG=""
+    [ "$TRY_CONTINUE" = "yes" ] && CONTINUE_FLAG="--continue"
+    [ -n "$CONTINUE_FLAG" ] \
+        && echo "[claude-code] Launching claude (with --continue)..." \
+        || echo "[claude-code] Launching claude (fresh session)..."
+
+    START_TS=$(date +%s)
+
 su -s /bin/bash claude -c "
     export HOME=$CLAUDE_HOME
     export NPM_GLOBAL=$CLAUDE_HOME/npm-global
     export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
     cd '$WORK_DIR' && claude \
+        $CONTINUE_FLAG \
         --dangerously-skip-permissions \
         --remote-control \
         $CHANNELS_ARG
@@ -227,6 +239,12 @@ su -s /bin/bash claude -c "
     fi
 done
 
-echo "[claude-code] Claude exited. Restarting in 10s (Ctrl-C-equivalent to stop the add-on)..."
-sleep 10
+    DURATION=$(( $(date +%s) - START_TS ))
+    if [ "$TRY_CONTINUE" = "yes" ] && [ "$DURATION" -lt 15 ]; then
+        echo "[claude-code] --continue exited in ${DURATION}s — session likely corrupted. Subsequent restarts this boot will start fresh."
+        TRY_CONTINUE=no
+    else
+        echo "[claude-code] Claude exited after ${DURATION}s. Restarting in 10s..."
+    fi
+    sleep 10
 done

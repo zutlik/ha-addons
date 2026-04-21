@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.1 - Prefer --continue, fall back on fast exit
+- First launch of each boot tries `--continue` to resume the latest
+  conversation. If claude exits in under 15s (stale deferred-tool
+  marker or other corruption), drop `--continue` for the rest of this
+  boot and start fresh sessions instead.
+- On the common success path, claude resumes the latest conversation
+  and keeps running — so you don't lose context on add-on restart.
+
 ## v1.6.0 - Stop claude crash bouncing the whole container
 - Drop `--continue` from the daemon invocation. It was trying to resume
   sessions with stale deferred-tool markers (a side effect of the
