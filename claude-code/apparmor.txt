@@ -52,8 +52,9 @@ profile claude-code flags=(attach_disconnected,mediate_deleted) {
   # Bun runtime
   /root/.bun/{,**} rwix,
 
-  # ttyd web terminal
+  # ttyd web terminal + its claude-user shell wrapper
   /usr/local/bin/ttyd ix,
+  /usr/local/bin/claude-shell rix,
 
   # Network (Anthropic API, Telegram, npm registry)
   network inet stream,

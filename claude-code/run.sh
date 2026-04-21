@@ -136,7 +136,7 @@ ttyd \
     --port 7681 \
     --interface 0.0.0.0 \
     ${INGRESS_ENTRY:+--base-path "${INGRESS_ENTRY}"} \
-    bash &
+    /usr/local/bin/claude-shell &
 TTYD_PID=$!
 echo "[claude-code] Web terminal started (pid=$TTYD_PID) on port 7681 (ingress: ${INGRESS_ENTRY:-none})"
 

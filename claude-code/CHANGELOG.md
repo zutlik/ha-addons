@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.0 - Web UI shell now runs as claude user
+- ttyd previously spawned `bash` as root, so `claude: command not
+  found` in the Web UI (root's PATH doesn't include the claude user's
+  npm-global). Even worse, `claude login` would have written creds to
+  the wrong HOME.
+- Add `/usr/local/bin/claude-shell` wrapper that drops to claude with
+  HOME=/data/claude, NPM_GLOBAL and PATH preconfigured, then execs
+  bash. Point ttyd at it.
+- `claude login` in the Web UI now writes to /data/claude/.claude/
+  where run.sh looks for credentials on next boot.
+
 ## v1.4.0 - Fix install-from-empty and legacy perms
 - Update check now branches on `command -v claude` first — if claude
   isn't installed, always install (prior logic silently treated

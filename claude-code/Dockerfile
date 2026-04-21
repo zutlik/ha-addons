@@ -52,8 +52,9 @@ RUN case "${BUILD_ARCH}" in \
       -o /usr/local/bin/ttyd && \
     chmod +x /usr/local/bin/ttyd
 
-# Copy entrypoint
+# Copy entrypoint and the ttyd shell wrapper
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
+COPY claude-shell.sh /usr/local/bin/claude-shell
+RUN chmod +x /run.sh /usr/local/bin/claude-shell
 
 CMD ["/run.sh"]
