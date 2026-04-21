@@ -47,6 +47,36 @@ mkdir -p "$WORK_DIR"
 chmod 777 "$WORK_DIR" 2>/dev/null || true
 
 # ============================================================
+# Telegram config diagnostics + startup ping. Fires independently of URL
+# extraction so we know whether the Telegram pipe works at all.
+# ============================================================
+tg_send() {
+    local text="$1"
+    local resp
+    resp=$(curl -sS -X POST \
+        "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+        --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+        --data-urlencode "text=${text}" \
+        --data-urlencode "disable_web_page_preview=true" 2>&1)
+    if echo "$resp" | grep -q '"ok":true'; then
+        echo "[claude-code] Telegram OK: sent '${text:0:60}...'"
+        return 0
+    else
+        echo "[claude-code] Telegram FAIL: $resp"
+        return 1
+    fi
+}
+
+if [ -z "$TELEGRAM_TOKEN" ]; then
+    echo "[claude-code] Telegram: TELEGRAM_BOT_TOKEN is empty — startup DM disabled."
+elif [ -z "$TELEGRAM_CHAT_ID" ]; then
+    echo "[claude-code] Telegram: TELEGRAM_CHAT_ID is empty — startup DM disabled (get your chat id from @userinfobot)."
+else
+    echo "[claude-code] Telegram: token+chat_id present, sending startup ping to chat ${TELEGRAM_CHAT_ID}..."
+    tg_send "Claude Code add-on starting up..." || true
+fi
+
+# ============================================================
 # Pre-accept the workspace trust dialog. Without this, claude shows
 # "Is this a project you trust?" on startup and our headless daemon
 # has no one to press 1. We write ~/.claude.json (HOME=/data/claude)
@@ -284,14 +314,7 @@ while true; do
                 }" > /dev/null || true
 
             if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-                curl -sf -X POST \
-                    "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-                    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-                    --data-urlencode "text=Claude Code is ready. Remote control: ${URL}" \
-                    --data-urlencode "disable_web_page_preview=true" \
-                    > /dev/null \
-                    && echo "[claude-code] Posted remote control URL to Telegram chat ${TELEGRAM_CHAT_ID}." \
-                    || echo "[claude-code] Failed to post remote control URL to Telegram (check bot token / chat id)."
+                tg_send "Claude Code is ready. Remote control: ${URL}" || true
             fi
         done
     ) &

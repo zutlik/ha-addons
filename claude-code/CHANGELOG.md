@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.3 - Telegram startup ping + diagnostics
+- Send a "Claude Code add-on starting up..." DM at the top of run.sh,
+  before anything can go wrong with claude/URL extraction. Lets you
+  confirm the Telegram token+chat_id pipe works independently.
+- Log actual Telegram API response on failure instead of just "failed"
+  (helps diagnose bad token, wrong chat_id, blocked bot, etc.).
+- Log explicit reason when DM is disabled (missing token vs. missing
+  chat_id), so add-on log tells you which option to fill in.
+- Factor the sendMessage call into a `tg_send` helper reused by both
+  the startup ping and the URL DM.
+
 ## v1.9.2 - Fix Telegram URL DM on startup
 - Previous URL extraction tailed `tmux pipe-pane` output through sed.
   That failed because tmux streams partial terminal redraws (cursor
