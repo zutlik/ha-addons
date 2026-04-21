@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.9.6 - Pick latest URL, re-announce when it changes
+- `head -1` was grabbing the *oldest* URL in tmux scrollback — so if
+  claude printed the banner multiple times (reconnect, status refresh,
+  previous --remote-control invocation in the same pane), we'd DM a
+  long-expired URL with "This Remote Control session has ended."
+- Use `tail -1` to pick the most recently rendered URL.
+- Track LAST_URL instead of a one-shot POSTED flag, so if claude
+  regenerates the URL during the daemon's lifetime we send a fresh DM
+  + HA notification.
+
 ## v1.9.5 - Fix remote-control URL regex
 - Claude prints the URL as `https://claude.ai/code/session_<id>`, not
   `/rc/<token>` — the old regex (carried over from an earlier CLI

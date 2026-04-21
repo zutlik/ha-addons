@@ -288,24 +288,23 @@ while true; do
     # If the URL doesn't land after N polls, dump a pane snapshot to the log
     # so we can see what's actually there vs. what our regex expects.
     (
-        URL_POSTED=""
+        LAST_URL=""
         POLL=0
         DIAG_DUMPED=""
         while true; do
             sleep 3
             POLL=$((POLL + 1))
             su -s /bin/bash claude -c "tmux has-session -t $TMUX_SESSION 2>/dev/null" || break
-            [ -n "$URL_POSTED" ] && continue
             SNAPSHOT=$(su -s /bin/bash claude -c "tmux capture-pane -t $TMUX_SESSION -p -S -5000" 2>&1)
             CAP_EXIT=$?
             if [ "$CAP_EXIT" -ne 0 ]; then
                 echo "[claude-code] capture-pane failed (exit $CAP_EXIT): $SNAPSHOT"
                 continue
             fi
-            URL=$(echo "$SNAPSHOT" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9]+' | head -1)
+            # scrollback is printed oldest-first, so the LAST URL in the
+            # snapshot is the most recently rendered — use tail, not head.
+            URL=$(echo "$SNAPSHOT" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9]+' | tail -1)
             if [ -z "$URL" ]; then
-                # After ~15s with no URL, dump what we DO see so we can tune the
-                # regex / confirm the daemon actually rendered the URL.
                 if [ -z "$DIAG_DUMPED" ] && [ "$POLL" -ge 5 ]; then
                     DIAG_DUMPED=yes
                     echo "[claude-code] --- URL not found after ${POLL} polls; pane snapshot follows ---"
@@ -314,8 +313,10 @@ while true; do
                 fi
                 continue
             fi
+            # Same URL as last post — nothing to do.
+            [ "$URL" = "$LAST_URL" ] && continue
 
-            URL_POSTED=yes
+            LAST_URL="$URL"
             echo "$URL" > "$CLAUDE_HOME/remote_control_url.txt"
             echo "[claude-code] ========================================================"
             echo "[claude-code] REMOTE CONTROL URL: $URL"
