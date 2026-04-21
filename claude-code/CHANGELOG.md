@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.0 - Fix su failure at the AppArmor layer
+- Root cause of `su: cannot set groups: Operation not permitted`:
+  apparmor.txt had a `# Capabilities` comment but no actual rules, so
+  AppArmor denied every capability at the LSM layer regardless of what
+  Docker/`full_access` granted.
+- Add explicit `capability setuid,` / `setgid,` / `audit_write,` /
+  `dac_override,` / `dac_read_search,` etc. so `su claude` can run
+  setgroups() and PAM can set up the session.
+
 ## v1.2.0 - Fix su failure (setgroups EPERM)
 - Previous `capabilities: [SETUID, SETGID]` in config.yaml was silently
   ignored — HA's schema uses `privileged:` and that allowlist does not

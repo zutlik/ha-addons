@@ -3,7 +3,20 @@
 profile claude-code flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
-  # Capabilities
+  # Capabilities — AppArmor denies caps not listed here even when Docker grants them.
+  # su/sudo need setuid+setgid+audit_write; PAM session setup needs dac_override/
+  # dac_read_search; various bootstrap steps need chown/fowner/fsetid.
+  capability setuid,
+  capability setgid,
+  capability audit_write,
+  capability dac_override,
+  capability dac_read_search,
+  capability chown,
+  capability fowner,
+  capability fsetid,
+  capability sys_resource,
+  capability kill,
+
   file,
   signal (send) set=(kill,term,int,hup,cont),
 
