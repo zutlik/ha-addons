@@ -38,6 +38,7 @@ get_option() {
 }
 
 TELEGRAM_TOKEN=$(get_option "TELEGRAM_BOT_TOKEN" "")
+TELEGRAM_CHAT_ID=$(get_option "TELEGRAM_CHAT_ID" "")
 WORK_DIR=$(get_option "WORK_DIR" "/share/claude-workspace")
 AUTO_UPDATE=$(get_option "AUTO_UPDATE_CHECK" "true")
 
@@ -236,6 +237,18 @@ su -s /bin/bash claude -c "
                 \"message\": \"Session is ready.\\n\\n[Open remote control]($URL)\\n\\nOr copy the URL:\\n\`$URL\`\",
                 \"notification_id\": \"claude_code_rc_url\"
             }" > /dev/null || true
+
+        # DM the URL to Telegram if both bot token and chat ID are configured.
+        if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -sf -X POST \
+                "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                --data-urlencode "text=Claude Code is ready. Remote control: ${URL}" \
+                --data-urlencode "disable_web_page_preview=true" \
+                > /dev/null \
+                && echo "[claude-code] Posted remote control URL to Telegram chat ${TELEGRAM_CHAT_ID}." \
+                || echo "[claude-code] Failed to post remote control URL to Telegram (check bot token / chat id)."
+        fi
     fi
 done
 

@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Claude Code
-version: "v1.6.1"
+version: "v1.7.0"
 slug: claude-code
 description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
 url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
@@ -20,11 +20,15 @@ map:
 
 options:
   TELEGRAM_BOT_TOKEN: ""
+  TELEGRAM_CHAT_ID: ""
   WORK_DIR: "/share/claude-workspace"
   AUTO_UPDATE_CHECK: true
 
 schema:
   TELEGRAM_BOT_TOKEN: "str?"
+  # Your personal Telegram chat ID. When set, the add-on DMs the remote
+  # control URL here on every startup. Get it by messaging @userinfobot.
+  TELEGRAM_CHAT_ID: "str?"
   WORK_DIR: "str?"
   AUTO_UPDATE_CHECK: "bool?"
 

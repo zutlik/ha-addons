@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.0 - DM the remote control URL to Telegram on each start
+- New `TELEGRAM_CHAT_ID` option. When set alongside `TELEGRAM_BOT_TOKEN`,
+  the add-on DMs the remote control URL to that chat every time claude
+  starts.
+- Uses the Telegram Bot API directly (`sendMessage`) from run.sh —
+  doesn't route through Claude, so the URL is delivered even if
+  claude itself is misbehaving.
+- To find your chat ID, DM `@userinfobot` on Telegram.
+
 ## v1.6.1 - Prefer --continue, fall back on fast exit
 - First launch of each boot tries `--continue` to resume the latest
   conversation. If claude exits in under 15s (stale deferred-tool
