@@ -1,0 +1,37 @@
+name: Vision Addon
+version: "1.0.0"
+slug: vision-addon
+description: Webcam-based face recognition and gesture detection for Home Assistant
+url: "https://github.com/zutlik/ha-addons/tree/main/vision-addon"
+arch:
+  - aarch64
+  - amd64
+init: false
+map:
+  - share:rw
+options:
+  video_device: "/dev/video0"
+  detection_fps: 5
+  face_confidence: 0.6
+  gesture_confidence: 0.7
+  gesture_cooldown_seconds: 2
+  motion_cooldown_seconds: 5
+schema:
+  video_device: "str"
+  detection_fps: "int"
+  face_confidence: "float"
+  gesture_confidence: "float"
+  gesture_cooldown_seconds: "int"
+  motion_cooldown_seconds: "int"
+restart_policy: unless-stopped
+image: "m3nadav/vision-addon"
+homeassistant_api: true
+ingress: true
+ingress_port: 8080
+panel_icon: mdi:camera-account
+panel_title: "Vision"
+panel_admin: false
+devices:
+  - /dev/video0
+privileged:
+  - SYS_RAWIO

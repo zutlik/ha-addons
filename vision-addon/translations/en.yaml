@@ -1,0 +1,19 @@
+configuration:
+  video_device:
+    name: Video Device
+    description: Path to the webcam device (e.g. /dev/video0)
+  detection_fps:
+    name: Detection FPS
+    description: Frames per second for detection processing (1-15)
+  face_confidence:
+    name: Face Confidence Threshold
+    description: Minimum confidence for face recognition match (0.0-1.0)
+  gesture_confidence:
+    name: Gesture Confidence Threshold
+    description: Minimum confidence for gesture detection (0.0-1.0)
+  gesture_cooldown_seconds:
+    name: Gesture Cooldown (seconds)
+    description: Minimum seconds between repeated gesture events
+  motion_cooldown_seconds:
+    name: Motion Cooldown (seconds)
+    description: Minimum seconds between motion events

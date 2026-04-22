@@ -1,6 +1,6 @@
-# Publish Scripts Add-on Repository
+# Home Assistant Add-ons Repository
 
-This repository contains a Home Assistant add-on for publishing and managing scripts with FastAPI integration.
+This repository contains Home Assistant add-ons.
 
 Add-on documentation: <https://developers.home-assistant.io/docs/add-ons>
 
@@ -19,6 +19,13 @@ This repository contains the following add-ons
 ![Supports i386 Architecture][i386-shield]
 
 _A FastAPI-based add-on for publishing and managing scripts in Home Assistant with REST API interface._
+
+### [Vision Addon](./vision-addon)
+
+![Supports aarch64 Architecture][aarch64-shield]
+![Supports amd64 Architecture][amd64-shield]
+
+_Webcam-based face recognition and gesture detection. Identify known people, detect 10 hand gestures, and trigger HA automations — all running locally on your Pi._
 
 <!--
 
