@@ -291,7 +291,14 @@ while true; do
     # starting a new Claude. If bun (Telegram plugin) stays alive between
     # sessions it keeps polling and consumes Telegram updates that the new
     # session's bun will never see, causing lost inbound messages.
-    su -s /bin/bash claude -c "pkill -f 'bun server.ts' 2>/dev/null; pkill -f 'bun run.*telegram' 2>/dev/null; true"
+    #
+    # The `[b]` bracket trick prevents pkill from matching its own shell's
+    # cmdline: the regex `[b]un` matches the literal string `bun`, but the
+    # cmdline we're running contains `[b]un` (with brackets), so the cmdline
+    # does NOT contain `bun` as a substring. Without this, pkill SIGTERMs its
+    # parent bash, su returns non-zero, `set -e` exits run.sh, and s6 tears
+    # the container down — looking like an external SIGTERM.
+    su -s /bin/bash claude -c "pkill -f '[b]un server.ts' 2>/dev/null; pkill -f '[b]un run.*telegram' 2>/dev/null; true"
     sleep 2
 
     # Start the daemon inside a detached tmux session.
@@ -379,7 +386,8 @@ while true; do
     wait "$WATCHER_PID" 2>/dev/null || true
 
     # Kill bun immediately on Claude exit so it stops consuming Telegram updates.
-    su -s /bin/bash claude -c "pkill -f 'bun server.ts' 2>/dev/null; pkill -f 'bun run.*telegram' 2>/dev/null; true"
+    # See above re: `[b]` bracket trick — prevents pkill from matching its own shell.
+    su -s /bin/bash claude -c "pkill -f '[b]un server.ts' 2>/dev/null; pkill -f '[b]un run.*telegram' 2>/dev/null; true"
 
     DURATION=$(( $(date +%s) - START_TS ))
     if [ "$TRY_CONTINUE" = "yes" ] && [ "$DURATION" -lt 15 ]; then
