@@ -4,7 +4,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-HA_URL = os.environ.get("HA_URL", "http://supervisor/core")
+# Prefer the real HA URL for LLAT compatibility; fall back to supervisor proxy
+HA_URL = os.environ.get("HA_URL", "http://homeassistant:8123")
 TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 HEADERS = {
@@ -34,6 +35,14 @@ async def set_state(entity_id: str, state: str, attributes: dict = None):
                     logger.warning(f"HA set_state {entity_id} returned {resp.status}")
     except Exception as e:
         logger.error(f"Failed to set HA state {entity_id}: {e}")
+
+
+async def set_last_gesture(gesture: str):
+    await set_state(
+        "sensor.vision_last_gesture",
+        gesture,
+        {"friendly_name": "Vision Last Gesture", "icon": "mdi:hand-wave"},
+    )
 
 
 async def update_sensors(faces_count: int, person_states: dict, motion: bool):

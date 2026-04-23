@@ -12,7 +12,7 @@ from collections import deque
 
 from face_engine import FaceEngine
 from gesture_engine import GestureEngine
-from ha_client import fire_event, update_sensors
+from ha_client import fire_event, update_sensors, set_last_gesture
 from web_ui import create_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -87,6 +87,7 @@ class VisionLoop:
 
         logger.info(f"Gesture fired: {gesture}")
         await fire_event("vision_addon.gesture_detected", {"gesture": gesture})
+        await set_last_gesture(gesture)
 
     async def _handle_faces(self, face_result: dict, motion: bool):
         now = time.time()
