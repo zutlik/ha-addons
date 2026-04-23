@@ -22,6 +22,12 @@ chmod 777 "$CLAUDE_HOME"
 # so make everything under /data/claude writable by the claude user.
 chmod -R a+rwX "$CLAUDE_HOME" 2>/dev/null || true
 
+# Persist the Supervisor token so the claude user process can call the HA API.
+# SUPERVISOR_TOKEN is only in root's environment; writing it to a file is the
+# only way to hand it to the non-root claude user running inside tmux.
+printf '%s' "$SUPERVISOR_TOKEN" > "$CLAUDE_HOME/.supervisor_token"
+chmod 644 "$CLAUDE_HOME/.supervisor_token"
+
 # ============================================================
 # Read options (root-owned /data/options.json, read as root)
 # ============================================================
@@ -276,8 +282,11 @@ while true; do
         export NPM_GLOBAL=$CLAUDE_HOME/npm-global
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
         export NO_COLOR=1
+        STOKEN=\$(cat $CLAUDE_HOME/.supervisor_token 2>/dev/null || echo '')
         tmux kill-session -t $TMUX_SESSION 2>/dev/null || true
         cd '$WORK_DIR' && tmux new-session -d -s $TMUX_SESSION -x 200 -y 50 \
+            -e SUPERVISOR_TOKEN=\"\$STOKEN\" \
+            -e HA_URL=\"http://supervisor/core\" \
             \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\"
     "
 
