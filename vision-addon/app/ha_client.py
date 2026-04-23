@@ -4,8 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Prefer the real HA URL for LLAT compatibility; fall back to supervisor proxy
-HA_URL = os.environ.get("HA_URL", "http://homeassistant:8123")
+HA_URL = os.environ.get("HA_URL", "http://supervisor/core")
 TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 HEADERS = {

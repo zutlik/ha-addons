@@ -12,7 +12,7 @@ export GESTURE_CONFIDENCE=$(get_opt gesture_confidence 0.7)
 export GESTURE_COOLDOWN=$(get_opt gesture_cooldown_seconds 2)
 export MOTION_COOLDOWN=$(get_opt motion_cooldown_seconds 5)
 export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
-export HA_URL="http://homeassistant:8123"
+export HA_URL="http://supervisor/core"
 export MEDIAPIPE_DISABLE_GPU=1
 
 echo "[vision-addon] Starting..."
