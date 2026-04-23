@@ -1,17 +1,23 @@
-#!/usr/bin/with-contenv bashio
+#!/bin/bash
+set -e
 
-export VIDEO_DEVICE=$(bashio::config 'video_device')
-export DETECTION_FPS=$(bashio::config 'detection_fps')
-export FACE_CONFIDENCE=$(bashio::config 'face_confidence')
-export GESTURE_CONFIDENCE=$(bashio::config 'gesture_confidence')
-export GESTURE_COOLDOWN=$(bashio::config 'gesture_cooldown_seconds')
-export MOTION_COOLDOWN=$(bashio::config 'motion_cooldown_seconds')
+get_opt() {
+    jq -r ".${1} // \"${2}\"" /data/options.json 2>/dev/null || echo "${2}"
+}
+
+export STREAM_URL=$(get_opt stream_url "rtsp://10.100.102.15/live")
+export DETECTION_FPS=$(get_opt detection_fps 5)
+export FACE_CONFIDENCE=$(get_opt face_confidence 0.6)
+export GESTURE_CONFIDENCE=$(get_opt gesture_confidence 0.7)
+export GESTURE_COOLDOWN=$(get_opt gesture_cooldown_seconds 2)
+export MOTION_COOLDOWN=$(get_opt motion_cooldown_seconds 5)
 export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
 export HA_URL="http://supervisor/core"
+export MEDIAPIPE_DISABLE_GPU=1
 
-bashio::log.info "Starting Vision Addon..."
-bashio::log.info "Video device: ${VIDEO_DEVICE}"
-bashio::log.info "Detection FPS: ${DETECTION_FPS}"
+echo "[vision-addon] Starting..."
+echo "[vision-addon] Stream: ${STREAM_URL}"
+echo "[vision-addon] FPS: ${DETECTION_FPS}"
 
 cd /app
 exec python3 main.py

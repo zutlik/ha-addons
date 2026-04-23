@@ -15,7 +15,7 @@ from web_ui import create_app
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-VIDEO_DEVICE = os.environ.get("VIDEO_DEVICE", "/dev/video0")
+STREAM_URL = os.environ.get("STREAM_URL", "/dev/video0")
 DETECTION_FPS = int(os.environ.get("DETECTION_FPS", "5"))
 FACE_CONFIDENCE = float(os.environ.get("FACE_CONFIDENCE", "0.6"))
 GESTURE_CONFIDENCE = float(os.environ.get("GESTURE_CONFIDENCE", "0.7"))
@@ -129,14 +129,22 @@ class VisionLoop:
         await update_sensors(count, person_states, motion_on)
 
     async def run(self):
-        device_index = int(VIDEO_DEVICE.replace("/dev/video", "")) if "/dev/video" in VIDEO_DEVICE else 0
-        cap = cv2.VideoCapture(device_index)
+        if STREAM_URL.startswith("/dev/video"):
+            source = int(STREAM_URL.replace("/dev/video", "") or "0")
+        else:
+            source = STREAM_URL  # RTSP or other URL
+
+        cap = cv2.VideoCapture(source)
         if not cap.isOpened():
-            logger.error(f"Cannot open video device {VIDEO_DEVICE}")
+            logger.error(f"Cannot open stream: {STREAM_URL}")
             return
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        if isinstance(source, int):
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        else:
+            # For RTSP: minimise buffer to reduce latency
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         interval = 1.0 / DETECTION_FPS
         self.running = True
