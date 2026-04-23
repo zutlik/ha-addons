@@ -153,6 +153,7 @@ class VisionLoop:
         interval = 1.0 / DETECTION_FPS
         self.running = True
         logger.info(f"Vision loop started at {DETECTION_FPS} FPS")
+        await set_last_gesture("none")  # ensure entity exists from startup
 
         while self.running:
             loop_start = time.time()
