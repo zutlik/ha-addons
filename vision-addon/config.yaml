@@ -1,5 +1,5 @@
 name: Vision Addon
-version: "1.1.2"
+version: "1.1.3"
 slug: vision-addon
 description: Camera-based gesture detection for Home Assistant (supports RTSP and local webcam)
 url: "https://github.com/zutlik/ha-addons/tree/main/vision-addon"
@@ -10,8 +10,8 @@ init: false
 map:
   - share:rw
 options:
-  stream_url: "rtsp://admin:7aX2W-@p6@10.100.102.20:554/h264Preview_01_main"
-  detection_fps: 5
+  stream_url: "rtsp://admin:7aX2W-@p6@10.100.102.20:554/h264Preview_01_sub"
+  detection_fps: 3
   face_confidence: 0.6
   gesture_confidence: 0.7
   gesture_cooldown_seconds: 2

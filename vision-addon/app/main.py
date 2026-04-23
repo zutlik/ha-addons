@@ -3,8 +3,11 @@ import os
 import time
 import logging
 import threading
-import cv2
 import numpy as np
+
+# Must be set before cv2 is imported so ffmpeg uses TCP for RTSP (reduces decode errors and packet loss)
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+import cv2
 from collections import deque
 
 from face_engine import FaceEngine
