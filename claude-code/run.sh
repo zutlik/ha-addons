@@ -265,12 +265,34 @@ TMUX_SESSION=claude
 TRY_CONTINUE=yes
 while true; do
     CONTINUE_FLAG=""
+
+    # Skip --continue if the most recent session file is large (>400 entries).
+    # Large sessions with pending tool state from an unclean shutdown reliably
+    # crash during resume, burning the 10s restart delay for no benefit.
+    if [ "$TRY_CONTINUE" = "yes" ]; then
+        RECENT_SESSION=$(ls -t "$CLAUDE_HOME/.claude/projects/-share-claude-workspace/"*.jsonl 2>/dev/null | head -1)
+        if [ -n "$RECENT_SESSION" ]; then
+            SESSION_LINES=$(wc -l < "$RECENT_SESSION" 2>/dev/null || echo 0)
+            if [ "$SESSION_LINES" -gt 400 ]; then
+                echo "[claude-code] Session has $SESSION_LINES entries — skipping --continue to avoid resume crash."
+                TRY_CONTINUE=no
+            fi
+        fi
+    fi
+
     [ "$TRY_CONTINUE" = "yes" ] && CONTINUE_FLAG="--continue"
     [ -n "$CONTINUE_FLAG" ] \
         && echo "[claude-code] Launching claude (with --continue)..." \
         || echo "[claude-code] Launching claude (fresh session)..."
 
     START_TS=$(date +%s)
+
+    # Kill any lingering MCP plugin processes from the previous session before
+    # starting a new Claude. If bun (Telegram plugin) stays alive between
+    # sessions it keeps polling and consumes Telegram updates that the new
+    # session's bun will never see, causing lost inbound messages.
+    su -s /bin/bash claude -c "pkill -f 'bun server.ts' 2>/dev/null; pkill -f 'bun run.*telegram' 2>/dev/null; true"
+    sleep 2
 
     # Start the daemon inside a detached tmux session.
     su -s /bin/bash claude -c "
@@ -355,6 +377,9 @@ while true; do
 
     kill "$WATCHER_PID" 2>/dev/null || true
     wait "$WATCHER_PID" 2>/dev/null || true
+
+    # Kill bun immediately on Claude exit so it stops consuming Telegram updates.
+    su -s /bin/bash claude -c "pkill -f 'bun server.ts' 2>/dev/null; pkill -f 'bun run.*telegram' 2>/dev/null; true"
 
     DURATION=$(( $(date +%s) - START_TS ))
     if [ "$TRY_CONTINUE" = "yes" ] && [ "$DURATION" -lt 15 ]; then
