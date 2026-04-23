@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.10.6 - Robust HA token fallback; add HA_TOKEN option
+- `SUPERVISOR_TOKEN` is not always injected by the HA supervisor (depends on
+  addon install state). Added a three-tier fallback: supervisor token → HA_TOKEN
+  addon option → existing token file. This means a manually-written LLAT in
+  `/data/claude/.supervisor_token` now survives restarts.
+- Added optional `HA_TOKEN` config option: paste a Long-Lived Access Token
+  (HA → Profile → Security → Long-Lived Access Tokens) and the addon uses it
+  automatically when the supervisor token is unavailable.
+- Never overwrite a valid existing token with an empty value on restart.
+
+## v1.10.5 - bump version
+
 ## v1.10.0 - Seed workspace with self-improving-agent base files
 - Bundle `CLAUDE.md`, `MEMORY.md`, `MEMORY_PROTOCOL.md`, `SKILLS_INDEX.md`,
   `SELF_IMPROVEMENT_PROTOCOL.md`, `IMPROVEMENTS_BACKLOG.md` in the image at

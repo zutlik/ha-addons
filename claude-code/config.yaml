@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Claude Code
-version: "v1.10.5"
+version: "v1.10.6"
 slug: claude-code
 description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
 url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
@@ -24,6 +24,7 @@ options:
   WORK_DIR: "/share/claude-workspace"
   AUTO_UPDATE_CHECK: true
   DAEMON_AUTOSTART: true
+  HA_TOKEN: ""
 
 schema:
   TELEGRAM_BOT_TOKEN: "str?"
@@ -37,6 +38,10 @@ schema:
   # to accept one-time prompts (trust, bypass-permissions warning). Flip
   # back to true after prompts are accepted.
   DAEMON_AUTOSTART: "bool?"
+  # Long-Lived Access Token for the HA API. Only needed if SUPERVISOR_TOKEN
+  # is not injected automatically. Create one at HA → Profile → Security →
+  # Long-Lived Access Tokens.
+  HA_TOKEN: "str?"
 
 # hassio_api gives the addon access to the Supervisor and HA Core APIs.
 # Without it, SUPERVISOR_TOKEN is never injected into the environment,

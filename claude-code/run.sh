@@ -25,8 +25,28 @@ chmod -R a+rwX "$CLAUDE_HOME" 2>/dev/null || true
 # Persist the Supervisor token so the claude user process can call the HA API.
 # SUPERVISOR_TOKEN is only in root's environment; writing it to a file is the
 # only way to hand it to the non-root claude user running inside tmux.
-printf '%s' "$SUPERVISOR_TOKEN" > "$CLAUDE_HOME/.supervisor_token"
-chmod 644 "$CLAUDE_HOME/.supervisor_token"
+#
+# Priority: SUPERVISOR_TOKEN (injected by HA supervisor) > HA_TOKEN option (LLAT
+# set manually by the user) > existing file content (persisted from a prior run).
+# We never overwrite a valid token with an empty one, so a manually-written LLAT
+# survives addon restarts when the supervisor isn't injecting the token yet.
+_TOKEN_FILE="$CLAUDE_HOME/.supervisor_token"
+_HA_TOKEN_OPT=$(jq -r '.HA_TOKEN // empty' /data/options.json 2>/dev/null || true)
+if [ -n "$SUPERVISOR_TOKEN" ]; then
+    printf '%s' "$SUPERVISOR_TOKEN" > "$_TOKEN_FILE"
+    echo "[claude-code] HA token: using SUPERVISOR_TOKEN from supervisor."
+elif [ -n "$_HA_TOKEN_OPT" ]; then
+    printf '%s' "$_HA_TOKEN_OPT" > "$_TOKEN_FILE"
+    echo "[claude-code] HA token: using HA_TOKEN from addon options."
+elif [ -s "$_TOKEN_FILE" ]; then
+    echo "[claude-code] HA token: SUPERVISOR_TOKEN empty — keeping existing token from file."
+else
+    printf '' > "$_TOKEN_FILE"
+    echo "[claude-code] WARNING: No HA token available. HA API calls will fail."
+    echo "[claude-code]   Fix: set HA_TOKEN in addon options (create a Long-Lived Access Token"
+    echo "[claude-code]   in HA → Profile → Long-Lived Access Tokens) or reinstall the addon."
+fi
+chmod 644 "$_TOKEN_FILE"
 
 # ============================================================
 # Read options (root-owned /data/options.json, read as root)
