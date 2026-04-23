@@ -117,71 +117,28 @@ fi
 chmod 666 "$CLAUDE_JSON" 2>/dev/null || true
 
 # ============================================================
-# Write CLAUDE.md as root, BEFORE the su block.
-# (Kept separate so backticks in the content are never inside an
-# outer unquoted heredoc where the shell would try to execute them.)
+# Seed workspace with base files (CLAUDE.md, MEMORY.md, protocols, etc.)
+# from /opt/claude-base-files/. WORK_DIR lives on /share (outside the
+# container), so these files survive addon upgrades — which is exactly
+# why we only copy files that don't already exist. The user may have
+# edited them; we must never overwrite their changes on restart.
 # ============================================================
-if [ ! -f "$WORK_DIR/CLAUDE.md" ]; then
-    cat > "$WORK_DIR/CLAUDE.md" << 'CLAUDEMD'
-# Claude Code - Persistent Agent Instructions
-
-You are running as a persistent agent on a Raspberry Pi running Home Assistant OS.
-
-## Memory Protocol
-
-At the start of EVERY session:
-1. Check if `memory.md` exists in this directory.
-2. If it does, read it and briefly summarize the key context to yourself before responding.
-3. Mention any relevant remembered context proactively when it's useful.
-
-At the end of any meaningful session, or when asked, update `memory.md` with:
-- Summary of what was accomplished
-- Ongoing tasks or open requests
-- User preferences and working style learned
-- Important paths, credentials, or system details discovered
-- Date of last update
-
-Keep `memory.md` concise (aim for under 200 lines). Prioritize actionable context over verbose history.
-
-## Environment
-
-- Platform: Raspberry Pi, Home Assistant OS
-- Workspace: this directory (/share/claude-workspace)
-- Home Assistant is running locally; you can interact with it via the HA API
-- /share is mounted read-write
-
-## Home Assistant API Access
-
-You have direct HA API access via the Supervisor token. Use these env vars (available in your process):
-- SUPERVISOR_TOKEN — bearer token for the HA Supervisor API
-- HA_URL — base URL: http://supervisor/core
-
-Token is also persisted at /data/claude/.supervisor_token for reference.
-
-Common API calls (bash):
-  # Call a service
-  curl -s -X POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
-    -H "Content-Type: application/json" \
-    "http://supervisor/core/api/services/<domain>/<service>" \
-    -d '{"entity_id": "light.living_room"}'
-
-  # Get entity state
-  curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
-    "http://supervisor/core/api/states/<entity_id>"
-
-  # List all addons
-  curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
-    "http://supervisor/addons"
-
-From Python, use aiohttp with Authorization: Bearer {os.environ['SUPERVISOR_TOKEN']}.
-
-## Behavior Guidelines
-
-- Be proactive: if you notice something that needs fixing or could be improved, mention it
-- You have broad permissions - use them responsibly
-- When writing automations or scripts for HA, test them before declaring success
-CLAUDEMD
-    echo "[claude-code] Created CLAUDE.md in $WORK_DIR"
+BASE_FILES_DIR="/opt/claude-base-files"
+if [ -d "$BASE_FILES_DIR" ]; then
+    for src in "$BASE_FILES_DIR"/*; do
+        [ -e "$src" ] || continue
+        fname=$(basename "$src")
+        dst="$WORK_DIR/$fname"
+        if [ ! -e "$dst" ]; then
+            cp "$src" "$dst"
+            chmod 666 "$dst" 2>/dev/null || true
+            echo "[claude-code] Seeded $fname in $WORK_DIR"
+        else
+            echo "[claude-code] $fname already exists in $WORK_DIR — left untouched"
+        fi
+    done
+else
+    echo "[claude-code] Warning: $BASE_FILES_DIR not found; skipping workspace seed."
 fi
 
 # ============================================================

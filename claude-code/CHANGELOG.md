@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.10.0 - Seed workspace with self-improving-agent base files
+- Bundle `CLAUDE.md`, `MEMORY.md`, `MEMORY_PROTOCOL.md`, `SKILLS_INDEX.md`,
+  `SELF_IMPROVEMENT_PROTOCOL.md`, `IMPROVEMENTS_BACKLOG.md` in the image at
+  `/opt/claude-base-files/`.
+- On startup, copy each base file into `$WORK_DIR` only if it does not
+  already exist — user edits on `/share` survive addon restart/upgrade.
+- Replace the inline `CLAUDE.md` heredoc in `run.sh` with the seed loop.
+  The new `CLAUDE.md` keeps the HA/RPi context and adds the session
+  lifecycle + self-improvement mandate referenced by the other files.
+
 ## v1.9.6 - Pick latest URL, re-announce when it changes
 - `head -1` was grabbing the *oldest* URL in tmux scrollback — so if
   claude printed the banner multiple times (reconnect, status refresh,

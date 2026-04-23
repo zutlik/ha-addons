@@ -59,4 +59,9 @@ COPY claude-shell.sh /usr/local/bin/claude-shell
 COPY claude-attach.sh /usr/local/bin/claude-attach
 RUN chmod +x /run.sh /usr/local/bin/claude-shell /usr/local/bin/claude-attach
 
+# Seed files for the workspace (CLAUDE.md, MEMORY.md, protocols, etc.).
+# Copied into $WORK_DIR at startup only if the target file does not already
+# exist, so user-edited versions are never clobbered on addon restart/upgrade.
+COPY base-files/ /opt/claude-base-files/
+
 CMD ["/run.sh"]
