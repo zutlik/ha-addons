@@ -49,6 +49,21 @@ WORK_DIR=$(get_option "WORK_DIR" "/share/claude-workspace")
 AUTO_UPDATE=$(get_option "AUTO_UPDATE_CHECK" "true")
 DAEMON_AUTOSTART=$(get_option "DAEMON_AUTOSTART" "true")
 
+# Fall back to the plugin's own token/access config if options are not set.
+# The plugin stores its token in ~/.claude/channels/telegram/.env and the
+# allowed chat IDs in access.json — use those so startup pings work even
+# when the addon options are left blank.
+PLUGIN_ENV="$CLAUDE_HOME/.claude/channels/telegram/.env"
+ACCESS_JSON="$CLAUDE_HOME/.claude/channels/telegram/access.json"
+if [ -z "$TELEGRAM_TOKEN" ] && [ -f "$PLUGIN_ENV" ]; then
+    TELEGRAM_TOKEN=$(grep -oP '(?<=TELEGRAM_BOT_TOKEN=).+' "$PLUGIN_ENV" | head -1)
+    echo "[claude-code] Telegram: token loaded from plugin .env"
+fi
+if [ -z "$TELEGRAM_CHAT_ID" ] && [ -f "$ACCESS_JSON" ]; then
+    TELEGRAM_CHAT_ID=$(jq -r '.allowFrom[0] // empty' "$ACCESS_JSON" 2>/dev/null)
+    [ -n "$TELEGRAM_CHAT_ID" ] && echo "[claude-code] Telegram: chat_id ${TELEGRAM_CHAT_ID} loaded from access.json"
+fi
+
 mkdir -p "$WORK_DIR"
 chmod 777 "$WORK_DIR" 2>/dev/null || true
 
@@ -74,12 +89,11 @@ tg_send() {
 }
 
 if [ -z "$TELEGRAM_TOKEN" ]; then
-    echo "[claude-code] Telegram: TELEGRAM_BOT_TOKEN is empty — startup DM disabled."
+    echo "[claude-code] Telegram: no token found — startup DM disabled."
 elif [ -z "$TELEGRAM_CHAT_ID" ]; then
-    echo "[claude-code] Telegram: TELEGRAM_CHAT_ID is empty — startup DM disabled (get your chat id from @userinfobot)."
+    echo "[claude-code] Telegram: no chat_id found — startup DM disabled."
 else
-    echo "[claude-code] Telegram: token+chat_id present, sending startup ping to chat ${TELEGRAM_CHAT_ID}..."
-    tg_send "Claude Code add-on starting up..." || true
+    echo "[claude-code] Telegram: ready to notify chat ${TELEGRAM_CHAT_ID} when Claude is online."
 fi
 
 # ============================================================
@@ -324,7 +338,7 @@ while true; do
                 }" > /dev/null || true
 
             if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-                tg_send "Claude Code is ready. Remote control: ${URL}" || true
+                tg_send "Hello, I am back online. Here to chat and more" || true
             fi
         done
     ) &
