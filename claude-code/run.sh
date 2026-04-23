@@ -296,6 +296,7 @@ while true; do
         LAST_URL=""
         POLL=0
         DIAG_DUMPED=""
+        GREETING_SENT=""
         while true; do
             sleep 3
             POLL=$((POLL + 1))
@@ -338,7 +339,9 @@ while true; do
                 }" > /dev/null || true
 
             if [ -n "$TELEGRAM_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-                tg_send "Hello, I am back online. Here to chat and more" || true
+                [ -z "$GREETING_SENT" ] && tg_send "Hello, I am back online. Here to chat and more" || true
+                GREETING_SENT=yes
+                tg_send "Remote control: ${URL}" || true
             fi
         done
     ) &
