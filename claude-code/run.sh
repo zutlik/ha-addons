@@ -150,6 +150,31 @@ Keep `memory.md` concise (aim for under 200 lines). Prioritize actionable contex
 - Home Assistant is running locally; you can interact with it via the HA API
 - /share is mounted read-write
 
+## Home Assistant API Access
+
+You have direct HA API access via the Supervisor token. Use these env vars (available in your process):
+- SUPERVISOR_TOKEN — bearer token for the HA Supervisor API
+- HA_URL — base URL: http://supervisor/core
+
+Token is also persisted at /data/claude/.supervisor_token for reference.
+
+Common API calls (bash):
+  # Call a service
+  curl -s -X POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+    -H "Content-Type: application/json" \
+    "http://supervisor/core/api/services/<domain>/<service>" \
+    -d '{"entity_id": "light.living_room"}'
+
+  # Get entity state
+  curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+    "http://supervisor/core/api/states/<entity_id>"
+
+  # List all addons
+  curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+    "http://supervisor/addons"
+
+From Python, use aiohttp with Authorization: Bearer {os.environ['SUPERVISOR_TOKEN']}.
+
 ## Behavior Guidelines
 
 - Be proactive: if you notice something that needs fixing or could be improved, mention it
