@@ -1,3 +1,9 @@
+## 1.1.8
+
+- Lowered default `gesture_hold_seconds` (0.6 → 0.2) and `gesture_min_frames` (3 → 2) for faster initial recognition.
+- Lowered default `gesture_cooldown_seconds` (2 → 1.2) so a held gesture retriggers at a steady pace.
+- Changed `gesture_cooldown_seconds` schema from `int` to `float` so sub-second cooldowns are allowed.
+
 ## 1.1.7
 
 - Disabled face detection by default so gesture recognition owns the fast path.
