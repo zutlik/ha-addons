@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.10.13 - Fix HA MCP registration: use `claude mcp add` instead of settings.json
+- MCP servers are stored in `$HOME/.claude.json`, not `settings.json`. Writing
+  to settings.json (v1.10.10–v1.10.12) had no effect.
+- Fixed: run.sh now calls `claude mcp add homeassistant ... -t sse -s user`
+  as the claude user on every restart. Re-running `mcp add` on an existing name
+  overwrites it, keeping the token current after rotation.
+
 ## v1.10.12 - Fix HA MCP server location: write to user-level settings
 - Claude Code loads MCP servers from `$HOME/.claude/settings.json` (user-level),
   not from the project `.claude/settings.json`. Fixed run.sh to write the MCP

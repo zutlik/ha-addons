@@ -215,54 +215,36 @@ else
 fi
 
 # ============================================================
-# Configure HA MCP server in user-level Claude settings.
+# Configure HA MCP server via `claude mcp add`.
 #
-# Claude Code loads MCP servers from $HOME/.claude/settings.json (user-level),
-# not from the project .claude/settings.json. We write to both to be safe, but
-# the user-level file is what actually takes effect at startup.
+# Claude Code stores MCP server config in $HOME/.claude.json (not settings.json).
+# The only reliable way to register a server is `claude mcp add`, which writes
+# to that file in the correct format.
 #
-# The validated token (from $_TOKEN_FILE) is written directly on every restart —
-# Claude Code's SSE header support does not perform env-var substitution, and
-# refreshing on each restart keeps the token current after rotation.
+# We run this as the claude user (HOME=$CLAUDE_HOME) so the write lands in the
+# right .claude.json. The --scope user flag stores it persistently; re-running
+# `claude mcp add` on an existing name overwrites it, so the token stays current
+# after rotation without any extra cleanup.
 #
 # The MCP endpoint is always http://homeassistant:8123/mcp_server/sse —
-# the supervisor proxy does not expose /mcp_server, so this is independent
-# of the HA_URL selected above.
+# independent of HA_URL above (the supervisor proxy does not expose /mcp_server).
 # ============================================================
 _MCP_TOKEN=$(cat "$_TOKEN_FILE" 2>/dev/null || echo '')
 
-_write_mcp_config() {
-    local _f="$1"
-    mkdir -p "$(dirname "$_f")"
-    [ ! -f "$_f" ] && echo '{}' > "$_f"
-    local _updated
-    _updated=$(jq --arg tok "Bearer $_MCP_TOKEN" '
-        .mcpServers //= {} |
-        .mcpServers.homeassistant = {
-            "type": "sse",
-            "url": "http://homeassistant:8123/mcp_server/sse",
-            "headers": {"Authorization": $tok}
-        }
-    ' "$_f" 2>/dev/null)
-    if [ -n "$_updated" ]; then
-        echo "$_updated" > "$_f"
-        chmod 666 "$_f" 2>/dev/null || true
-        echo "[claude-code] HA MCP server configured in $f."
-    else
-        echo "[claude-code] WARNING: could not update $f with HA MCP config."
-    fi
-}
-
 if [ -n "$_MCP_TOKEN" ]; then
-    # User-level settings — loaded by Claude Code at startup
-    _write_mcp_config "$CLAUDE_HOME/.claude/settings.json"
-    # Project-level settings — belt-and-suspenders
-    mkdir -p "$WORK_DIR/.claude"
-    _write_mcp_config "$WORK_DIR/.claude/settings.json"
+    su -s /bin/bash claude -c "
+        export HOME=$CLAUDE_HOME
+        export NPM_GLOBAL=$CLAUDE_HOME/npm-global
+        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        claude mcp add homeassistant 'http://homeassistant:8123/mcp_server/sse' \
+            -t sse -s user \
+            -H 'Authorization: Bearer $_MCP_TOKEN' \
+            2>&1
+    " && echo "[claude-code] HA MCP server registered via claude mcp add." \
+      || echo "[claude-code] WARNING: claude mcp add failed — HA MCP server not registered."
 else
     echo "[claude-code] WARNING: no HA token available — skipping MCP server config."
 fi
-chmod 666 "$_SETTINGS_FILE" 2>/dev/null || true
 
 # ============================================================
 # Run setup as the claude user so all files under /data/claude/
