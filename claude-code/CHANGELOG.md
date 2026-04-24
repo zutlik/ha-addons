@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.10.9 - Fix --continue to always resume large sessions
+- Removed the 400-line session file size gate that incorrectly prevented
+  resuming long-but-valid sessions after a restart.
+- Replaced with a targeted check: inspect the last 20 lines of the session
+  JSONL for an unresolved trailing `tool_use` (no following `tool_result`),
+  which is the actual cause of resume crashes after unclean shutdowns.
+- Large sessions with clean state now always resume with `--continue`.
+  Corrupt sessions (pending tool call) skip `--continue` preemptively;
+  all other resume failures are caught by the existing fast-exit fallback
+  (< 15s exit drops to fresh-session mode for the rest of the boot).
+
 ## v1.10.8 - Validate HA token before use; dynamic HA_URL
 - `run.sh` now actively tests each token against the HA Core API (`GET /api/`)
   before committing to it. If `SUPERVISOR_TOKEN` returns non-200 (common when

@@ -325,15 +325,42 @@ TRY_CONTINUE=yes
 while true; do
     CONTINUE_FLAG=""
 
-    # Skip --continue if the most recent session file is large (>400 entries).
-    # Large sessions with pending tool state from an unclean shutdown reliably
-    # crash during resume, burning the 10s restart delay for no benefit.
+    # Skip --continue only if the session file has an unresolved trailing tool_use,
+    # which is the actual crash cause after an unclean shutdown (not session length).
+    # A large-but-clean session resumes fine — claude handles context compression
+    # internally. The fast-exit fallback below (< 15s) catches any other resume
+    # failures without needing a pre-emptive size gate.
     if [ "$TRY_CONTINUE" = "yes" ]; then
         RECENT_SESSION=$(ls -t "$CLAUDE_HOME/.claude/projects/-share-claude-workspace/"*.jsonl 2>/dev/null | head -1)
         if [ -n "$RECENT_SESSION" ]; then
-            SESSION_LINES=$(wc -l < "$RECENT_SESSION" 2>/dev/null || echo 0)
-            if [ "$SESSION_LINES" -gt 400 ]; then
-                echo "[claude-code] Session has $SESSION_LINES entries — skipping --continue to avoid resume crash."
+            # Check if the last non-empty line contains a tool_use with no following
+            # tool_result — sign of an in-flight tool call cut short by unclean exit.
+            LAST_TYPE=$(tail -n 20 "$RECENT_SESSION" 2>/dev/null \
+                | python3 -c "
+import sys, json
+last_tool_use = False
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        msg = json.loads(line)
+        role = msg.get('role','')
+        content = msg.get('content', [])
+        if isinstance(content, list):
+            types = [c.get('type','') for c in content if isinstance(c, dict)]
+            if 'tool_use' in types:
+                last_tool_use = True
+            elif 'tool_result' in types:
+                last_tool_use = False
+        elif role == 'user':
+            last_tool_use = False
+    except Exception:
+        pass
+print('pending' if last_tool_use else 'clean')
+" 2>/dev/null || echo "clean")
+            if [ "$LAST_TYPE" = "pending" ]; then
+                echo "[claude-code] Session has unresolved tool_use at tail — skipping --continue to avoid resume crash."
                 TRY_CONTINUE=no
             fi
         fi
