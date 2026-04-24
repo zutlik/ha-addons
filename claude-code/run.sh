@@ -22,31 +22,70 @@ chmod 777 "$CLAUDE_HOME"
 # so make everything under /data/claude writable by the claude user.
 chmod -R a+rwX "$CLAUDE_HOME" 2>/dev/null || true
 
-# Persist the Supervisor token so the claude user process can call the HA API.
-# SUPERVISOR_TOKEN is only in root's environment; writing it to a file is the
-# only way to hand it to the non-root claude user running inside tmux.
+# ============================================================
+# HA token + URL selection
 #
-# Priority: SUPERVISOR_TOKEN (injected by HA supervisor) > HA_TOKEN option (LLAT
-# set manually by the user) > existing file content (persisted from a prior run).
-# We never overwrite a valid token with an empty one, so a manually-written LLAT
-# survives addon restarts when the supervisor isn't injecting the token yet.
+# SUPERVISOR_TOKEN is injected by the HA supervisor into root's environment.
+# It can reach the HA Core API ONLY if homeassistant_api: true is active in
+# the running container — which may not be the case (e.g. addon installed
+# from an older config snapshot). We validate it with a live GET /api/ before
+# trusting it.
+#
+# If validation fails, we fall back to the user-supplied HA_TOKEN option
+# (a Long-Lived Access Token) and use http://homeassistant:8123 as the base
+# URL instead of http://supervisor/core.
+#
+# The selected token and URL are written to:
+#   /data/claude/.supervisor_token  — the bearer token (may be a LLAT, NOT
+#                                     necessarily the supervisor JWT)
+#   /data/claude/.ha_url            — the validated HA base URL (may be
+#                                     http://homeassistant:8123, not
+#                                     http://supervisor/core)
+#
+# IMPORTANT FOR FUTURE SESSIONS: do NOT assume SUPERVISOR_TOKEN is the
+# supervisor JWT or that HA_URL is http://supervisor/core. Always read both
+# from the above files — run.sh is the source of truth for which token/URL
+# combination actually works in the current deployment.
+# ============================================================
 _TOKEN_FILE="$CLAUDE_HOME/.supervisor_token"
+_HA_URL_FILE="$CLAUDE_HOME/.ha_url"
 _HA_TOKEN_OPT=$(jq -r '.HA_TOKEN // empty' /data/options.json 2>/dev/null || true)
-if [ -n "$SUPERVISOR_TOKEN" ]; then
+
+_ha_token_ok() {
+    local _tok="$1" _base="$2"
+    local _code
+    _code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+        -H "Authorization: Bearer $_tok" "$_base/api/" 2>/dev/null)
+    [ "$_code" = "200" ]
+}
+
+if [ -n "$SUPERVISOR_TOKEN" ] && _ha_token_ok "$SUPERVISOR_TOKEN" "http://supervisor/core"; then
     printf '%s' "$SUPERVISOR_TOKEN" > "$_TOKEN_FILE"
-    echo "[claude-code] HA token: using SUPERVISOR_TOKEN from supervisor."
+    printf '%s' "http://supervisor/core" > "$_HA_URL_FILE"
+    echo "[claude-code] HA token: SUPERVISOR_TOKEN validated OK."
+elif [ -n "$_HA_TOKEN_OPT" ] && _ha_token_ok "$_HA_TOKEN_OPT" "http://homeassistant:8123"; then
+    printf '%s' "$_HA_TOKEN_OPT" > "$_TOKEN_FILE"
+    printf '%s' "http://homeassistant:8123" > "$_HA_URL_FILE"
+    echo "[claude-code] HA token: SUPERVISOR_TOKEN failed Core API — using HA_TOKEN (LLAT) via http://homeassistant:8123."
+elif [ -n "$SUPERVISOR_TOKEN" ]; then
+    printf '%s' "$SUPERVISOR_TOKEN" > "$_TOKEN_FILE"
+    printf '%s' "http://supervisor/core" > "$_HA_URL_FILE"
+    echo "[claude-code] WARNING: SUPERVISOR_TOKEN present but Core API returned non-200, and no working HA_TOKEN found."
+    echo "[claude-code]   Fix: enable homeassistant_api: true in addon config, or set HA_TOKEN in addon options."
 elif [ -n "$_HA_TOKEN_OPT" ]; then
     printf '%s' "$_HA_TOKEN_OPT" > "$_TOKEN_FILE"
-    echo "[claude-code] HA token: using HA_TOKEN from addon options."
+    printf '%s' "http://homeassistant:8123" > "$_HA_URL_FILE"
+    echo "[claude-code] HA token: using HA_TOKEN (LLAT) — SUPERVISOR_TOKEN not injected."
 elif [ -s "$_TOKEN_FILE" ]; then
-    echo "[claude-code] HA token: SUPERVISOR_TOKEN empty — keeping existing token from file."
+    echo "[claude-code] HA token: no valid token found — keeping existing token from file."
 else
     printf '' > "$_TOKEN_FILE"
+    printf '%s' "http://supervisor/core" > "$_HA_URL_FILE"
     echo "[claude-code] WARNING: No HA token available. HA API calls will fail."
     echo "[claude-code]   Fix: set HA_TOKEN in addon options (create a Long-Lived Access Token"
     echo "[claude-code]   in HA → Profile → Long-Lived Access Tokens) or reinstall the addon."
 fi
-chmod 644 "$_TOKEN_FILE"
+chmod 644 "$_TOKEN_FILE" "$_HA_URL_FILE" 2>/dev/null || true
 
 # ============================================================
 # Read options (root-owned /data/options.json, read as root)
@@ -328,10 +367,11 @@ while true; do
         export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
         export NO_COLOR=1
         STOKEN=\$(cat $CLAUDE_HOME/.supervisor_token 2>/dev/null || echo '')
+        HA_URL_VAL=\$(cat $CLAUDE_HOME/.ha_url 2>/dev/null || echo 'http://supervisor/core')
         tmux kill-session -t $TMUX_SESSION 2>/dev/null || true
         cd '$WORK_DIR' && tmux new-session -d -s $TMUX_SESSION -x 200 -y 50 \
             -e SUPERVISOR_TOKEN=\"\$STOKEN\" \
-            -e HA_URL=\"http://supervisor/core\" \
+            -e HA_URL=\"\$HA_URL_VAL\" \
             \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\"
     "
 
@@ -377,10 +417,12 @@ while true; do
             echo "[claude-code] REMOTE CONTROL URL: $URL"
             echo "[claude-code] ========================================================"
 
+            _NOTIF_TOKEN=$(cat "$CLAUDE_HOME/.supervisor_token" 2>/dev/null || echo '')
+            _NOTIF_URL=$(cat "$CLAUDE_HOME/.ha_url" 2>/dev/null || echo 'http://supervisor/core')
             curl -sf -X POST \
-                -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+                -H "Authorization: Bearer ${_NOTIF_TOKEN}" \
                 -H "Content-Type: application/json" \
-                "http://supervisor/core/api/services/persistent_notification/create" \
+                "${_NOTIF_URL}/api/services/persistent_notification/create" \
                 -d "{
                     \"title\": \"Claude Code - Remote Control\",
                     \"message\": \"Session is ready.\\n\\n[Open remote control]($URL)\\n\\nOr copy the URL:\\n\`$URL\`\",

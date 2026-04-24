@@ -29,31 +29,43 @@ Read all referenced files before beginning any session.
 
 ## Home Assistant API Access
 
-You have direct HA API access via the Supervisor token. Use these env vars (available in your process):
-- `SUPERVISOR_TOKEN` — bearer token for the HA Supervisor API
-- `HA_URL` — base URL: `http://supervisor/core`
+You have direct HA API access. **Do not assume the values of `SUPERVISOR_TOKEN` or
+`HA_URL` in your environment** — `run.sh` validates tokens at startup and may have
+selected a Long-Lived Access Token (LLAT) over the supervisor JWT, and may have
+set `HA_URL` to `http://homeassistant:8123` instead of `http://supervisor/core`.
 
-Token is also persisted at `/data/claude/.supervisor_token` for reference.
+**Always read from these files, which are the authoritative source:**
+- `/data/claude/.supervisor_token` — the validated bearer token (may be a LLAT)
+- `/data/claude/.ha_url` — the validated HA base URL
 
 Common API calls (bash):
 
 ```bash
+# Load the validated token and URL
+HA_TOKEN=$(cat /data/claude/.supervisor_token)
+HA_BASE=$(cat /data/claude/.ha_url)
+
 # Call a service
-curl -s -X POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+curl -s -X POST -H "Authorization: Bearer $HA_TOKEN" \
   -H "Content-Type: application/json" \
-  "http://supervisor/core/api/services/<domain>/<service>" \
+  "$HA_BASE/api/services/<domain>/<service>" \
   -d '{"entity_id": "light.living_room"}'
 
 # Get entity state
-curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
-  "http://supervisor/core/api/states/<entity_id>"
+curl -s -H "Authorization: Bearer $HA_TOKEN" \
+  "$HA_BASE/api/states/<entity_id>"
 
-# List all addons
-curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
-  "http://supervisor/addons"
+# List all states (filter in python)
+curl -s -H "Authorization: Bearer $HA_TOKEN" "$HA_BASE/api/states"
 ```
 
-From Python, use aiohttp with `Authorization: Bearer {os.environ['SUPERVISOR_TOKEN']}`.
+From Python:
+```python
+import os
+ha_token = open('/data/claude/.supervisor_token').read().strip()
+ha_base = open('/data/claude/.ha_url').read().strip()
+# use ha_token as Bearer, ha_base as base URL
+```
 
 ---
 

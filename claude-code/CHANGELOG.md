@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.10.8 - Validate HA token before use; dynamic HA_URL
+- `run.sh` now actively tests each token against the HA Core API (`GET /api/`)
+  before committing to it. If `SUPERVISOR_TOKEN` returns non-200 (common when
+  `homeassistant_api: true` is not active in the running container), the addon
+  automatically falls back to the user-supplied `HA_TOKEN` LLAT and switches
+  the base URL to `http://homeassistant:8123`.
+- Introduces `/data/claude/.ha_url`: a file written by `run.sh` alongside
+  `.supervisor_token` that records the validated base URL. The tmux session and
+  the persistent-notification curl call both read from this file instead of
+  hardcoding `http://supervisor/core`.
+- **Important for future sessions**: `SUPERVISOR_TOKEN` in the tmux environment
+  may actually be a Long-Lived Access Token (LLAT), not the supervisor-injected
+  JWT. `HA_URL` may be `http://homeassistant:8123` rather than
+  `http://supervisor/core`. Always read both from `/data/claude/.ha_url` and
+  `/data/claude/.supervisor_token` rather than assuming their values.
+
 ## v1.10.6 - Robust HA token fallback; add HA_TOKEN option
 - `SUPERVISOR_TOKEN` is not always injected by the HA supervisor (depends on
   addon install state). Added a three-tier fallback: supervisor token → HA_TOKEN
