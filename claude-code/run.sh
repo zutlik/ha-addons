@@ -215,6 +215,46 @@ else
 fi
 
 # ============================================================
+# Configure HA MCP server in workspace settings.
+#
+# Writes the homeassistant MCP entry into $WORK_DIR/.claude/settings.json
+# so Claude has structured tool access to HA (get_entity, call_service, etc.)
+# without raw curl. Uses ${SUPERVISOR_TOKEN} as a runtime env-var placeholder —
+# Claude Code substitutes it from the tmux environment at startup.
+#
+# The MCP server is always at http://homeassistant:8123/mcp_server/sse
+# regardless of which token/URL was selected above (the supervisor proxy
+# does not expose /mcp_server).
+#
+# Never overwrites an existing homeassistant entry — user customisations survive
+# addon restarts and upgrades.
+# ============================================================
+_SETTINGS_FILE="$WORK_DIR/.claude/settings.json"
+mkdir -p "$WORK_DIR/.claude"
+[ ! -f "$_SETTINGS_FILE" ] && echo '{}' > "$_SETTINGS_FILE"
+chmod 666 "$_SETTINGS_FILE" 2>/dev/null || true
+
+if jq -e '.mcpServers.homeassistant' "$_SETTINGS_FILE" > /dev/null 2>&1; then
+    echo "[claude-code] HA MCP server already in settings.json — left untouched."
+else
+    _UPDATED=$(jq '
+        .mcpServers //= {} |
+        .mcpServers.homeassistant = {
+            "type": "sse",
+            "url": "http://homeassistant:8123/mcp_server/sse",
+            "headers": {"Authorization": "Bearer ${SUPERVISOR_TOKEN}"}
+        }
+    ' "$_SETTINGS_FILE" 2>/dev/null)
+    if [ -n "$_UPDATED" ]; then
+        echo "$_UPDATED" > "$_SETTINGS_FILE"
+        echo "[claude-code] HA MCP server added to settings.json."
+    else
+        echo "[claude-code] WARNING: could not update settings.json with HA MCP config."
+    fi
+fi
+chmod 666 "$_SETTINGS_FILE" 2>/dev/null || true
+
+# ============================================================
 # Run setup as the claude user so all files under /data/claude/
 # are created with claude ownership (no chown needed).
 # ============================================================

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.10.10 - Auto-configure HA MCP server on startup
+- On each startup, `run.sh` now ensures the HA MCP server is configured in
+  `$WORK_DIR/.claude/settings.json`. This gives Claude structured tool access
+  to Home Assistant (entity queries, service calls, logbook, etc.) without
+  needing raw curl commands.
+- MCP endpoint is always `http://homeassistant:8123/mcp_server/sse` — the
+  supervisor proxy does not expose `/mcp_server`, so this is hardcoded
+  independently of the selected token/URL.
+- Token is referenced as `${SUPERVISOR_TOKEN}` (env-var placeholder) — Claude
+  Code substitutes it from the tmux environment at runtime; no token is
+  hardcoded in the settings file.
+- Existing `homeassistant` MCP entries are never overwritten, so user
+  customisations survive restarts and upgrades.
+- Requires HA 2024.11+ (MCP server built into HA core; no separate addon needed).
+
 ## v1.10.9 - Fix --continue to always resume large sessions
 - Removed the 400-line session file size gate that incorrectly prevented
   resuming long-but-valid sessions after a restart.
