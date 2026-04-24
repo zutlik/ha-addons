@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Claude Code
-version: "v1.10.6"
+version: "v1.10.7"
 slug: claude-code
 description: "Run Claude Code as a persistent AI agent with Telegram and remote control"
 url: "https://github.com/zutlik/ha-addons/tree/main/claude-code"
@@ -43,10 +43,11 @@ schema:
   # Long-Lived Access Tokens.
   HA_TOKEN: "str?"
 
-# hassio_api gives the addon access to the Supervisor and HA Core APIs.
-# Without it, SUPERVISOR_TOKEN is never injected into the environment,
-# making all HA API calls fail silently.
+# hassio_api gives the addon access to the Supervisor API.
+# homeassistant_api gives the addon's SUPERVISOR_TOKEN access to the HA Core API
+# (http://supervisor/core/api/...). Both are needed for full HA interaction.
 hassio_api: true
+homeassistant_api: true
 
 # full_access is required so run.sh can use `su claude` to drop privileges.
 # HA's add-on schema drops CAP_SETGID by default and its `privileged:` allowlist
