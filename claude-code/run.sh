@@ -219,38 +219,40 @@ fi
 #
 # Writes the homeassistant MCP entry into $WORK_DIR/.claude/settings.json
 # so Claude has structured tool access to HA (get_entity, call_service, etc.)
-# without raw curl. Uses ${SUPERVISOR_TOKEN} as a runtime env-var placeholder —
-# Claude Code substitutes it from the tmux environment at startup.
+# without raw curl. The validated token (from $_TOKEN_FILE) is written
+# directly — Claude Code's SSE header support does not perform env-var
+# substitution, so the real value must be present in the file.
 #
 # The MCP server is always at http://homeassistant:8123/mcp_server/sse
 # regardless of which token/URL was selected above (the supervisor proxy
 # does not expose /mcp_server).
 #
-# Never overwrites an existing homeassistant entry — user customisations survive
-# addon restarts and upgrades.
+# On every restart the token in settings.json is refreshed from $_TOKEN_FILE,
+# so a rotated LLAT or a newly injected SUPERVISOR_TOKEN is always current.
 # ============================================================
 _SETTINGS_FILE="$WORK_DIR/.claude/settings.json"
+_MCP_TOKEN=$(cat "$_TOKEN_FILE" 2>/dev/null || echo '')
 mkdir -p "$WORK_DIR/.claude"
 [ ! -f "$_SETTINGS_FILE" ] && echo '{}' > "$_SETTINGS_FILE"
 chmod 666 "$_SETTINGS_FILE" 2>/dev/null || true
 
-if jq -e '.mcpServers.homeassistant' "$_SETTINGS_FILE" > /dev/null 2>&1; then
-    echo "[claude-code] HA MCP server already in settings.json — left untouched."
-else
-    _UPDATED=$(jq '
+if [ -n "$_MCP_TOKEN" ]; then
+    _UPDATED=$(jq --arg tok "Bearer $_MCP_TOKEN" '
         .mcpServers //= {} |
         .mcpServers.homeassistant = {
             "type": "sse",
             "url": "http://homeassistant:8123/mcp_server/sse",
-            "headers": {"Authorization": "Bearer ${SUPERVISOR_TOKEN}"}
+            "headers": {"Authorization": $tok}
         }
     ' "$_SETTINGS_FILE" 2>/dev/null)
     if [ -n "$_UPDATED" ]; then
         echo "$_UPDATED" > "$_SETTINGS_FILE"
-        echo "[claude-code] HA MCP server added to settings.json."
+        echo "[claude-code] HA MCP server configured in settings.json."
     else
         echo "[claude-code] WARNING: could not update settings.json with HA MCP config."
     fi
+else
+    echo "[claude-code] WARNING: no HA token available — skipping MCP server config."
 fi
 chmod 666 "$_SETTINGS_FILE" 2>/dev/null || true
 

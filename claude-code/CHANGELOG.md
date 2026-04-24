@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.10.11 - Fix HA MCP token: write real value, refresh on every restart
+- Claude Code's SSE `headers` do not support `${VAR}` env-var substitution,
+  so the `${SUPERVISOR_TOKEN}` placeholder written in v1.10.10 never connected.
+- Fixed: the validated token from `.supervisor_token` is now written directly
+  into settings.json on every addon restart (not just first install). This
+  also keeps the token current if the LLAT is rotated.
+
 ## v1.10.10 - Auto-configure HA MCP server on startup
 - On each startup, `run.sh` now ensures the HA MCP server is configured in
   `$WORK_DIR/.claude/settings.json`. This gives Claude structured tool access
