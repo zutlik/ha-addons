@@ -5,32 +5,57 @@ import logging
 import threading
 import numpy as np
 
-# Must be set before cv2 is imported so ffmpeg uses TCP for RTSP (reduces decode errors and packet loss)
+# Must be set before cv2 is imported so ffmpeg uses TCP for RTSP.
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2
-from collections import deque
 
-from face_engine import FaceEngine
 from gesture_engine import GestureEngine
-from ha_client import fire_event, update_sensors, set_last_gesture
+from ha_client import close_session, fire_event, set_last_gesture, update_sensors
 from web_ui import create_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 STREAM_URL = os.environ.get("STREAM_URL", "/dev/video0")
-DETECTION_FPS = int(os.environ.get("DETECTION_FPS", "5"))
+DETECTION_FPS = max(1, int(os.environ.get("DETECTION_FPS", "10")))
+ENABLE_FACE_DETECTION = _env_bool("ENABLE_FACE_DETECTION", False)
 FACE_CONFIDENCE = float(os.environ.get("FACE_CONFIDENCE", "0.6"))
-GESTURE_CONFIDENCE = float(os.environ.get("GESTURE_CONFIDENCE", "0.7"))
-GESTURE_COOLDOWN = int(os.environ.get("GESTURE_COOLDOWN", "2"))
-MOTION_COOLDOWN = int(os.environ.get("MOTION_COOLDOWN", "5"))
-GESTURE_HOLD_SECONDS = 1.5  # gesture must be held this long to fire
+FACE_DETECTION_INTERVAL = max(0.1, float(os.environ.get("FACE_DETECTION_INTERVAL", "3.0")))
+GESTURE_CONFIDENCE = float(os.environ.get("GESTURE_CONFIDENCE", "0.55"))
+GESTURE_TRACKING_CONFIDENCE = float(os.environ.get("GESTURE_TRACKING_CONFIDENCE", "0.5"))
+GESTURE_MODEL_COMPLEXITY = int(os.environ.get("GESTURE_MODEL_COMPLEXITY", "0"))
+GESTURE_COOLDOWN = float(os.environ.get("GESTURE_COOLDOWN", "2"))
+GESTURE_HOLD_SECONDS = max(0.1, float(os.environ.get("GESTURE_HOLD_SECONDS", "0.6")))
+GESTURE_MISS_GRACE_SECONDS = max(0.0, float(os.environ.get("GESTURE_MISS_GRACE_SECONDS", "0.35")))
+GESTURE_MIN_FRAMES = max(1, int(os.environ.get("GESTURE_MIN_FRAMES", "3")))
+MOTION_COOLDOWN = float(os.environ.get("MOTION_COOLDOWN", "5"))
+CAMERA_WIDTH = max(160, int(os.environ.get("CAMERA_WIDTH", "640")))
+CAMERA_HEIGHT = max(120, int(os.environ.get("CAMERA_HEIGHT", "480")))
+PROCESSING_WIDTH = max(0, int(os.environ.get("PROCESSING_WIDTH", "320")))
+JPEG_QUALITY = min(95, max(30, int(os.environ.get("JPEG_QUALITY", "65"))))
 
 
 class VisionLoop:
     def __init__(self):
-        self.face_engine = FaceEngine(FACE_CONFIDENCE)
-        self.gesture_engine = GestureEngine(GESTURE_CONFIDENCE)
+        self.face_engine = None
+        if ENABLE_FACE_DETECTION:
+            from face_engine import FaceEngine
+
+            self.face_engine = FaceEngine(FACE_CONFIDENCE)
+
+        self.gesture_engine = GestureEngine(
+            GESTURE_CONFIDENCE,
+            tracking_confidence=GESTURE_TRACKING_CONFIDENCE,
+            model_complexity=GESTURE_MODEL_COMPLEXITY,
+        )
         self.running = False
 
         # Shared state for web UI
@@ -43,6 +68,8 @@ class VisionLoop:
         # Gesture hold tracking
         self._gesture_candidate: str | None = None
         self._gesture_start: float = 0.0
+        self._gesture_last_seen: float = 0.0
+        self._gesture_observations: int = 0
         self._gesture_fired_at: float = 0.0  # last time we fired this gesture
 
         # Motion tracking
@@ -51,6 +78,15 @@ class VisionLoop:
 
         # Face cooldown per person
         self._person_fired_at: dict = {}
+        self._last_face_result = {"count": 0, "faces": []}
+        self._last_face_processed_at: float = 0.0
+
+    def _processing_frame(self, frame_rgb: np.ndarray) -> np.ndarray:
+        if PROCESSING_WIDTH <= 0 or frame_rgb.shape[1] <= PROCESSING_WIDTH:
+            return frame_rgb
+        scale = PROCESSING_WIDTH / frame_rgb.shape[1]
+        height = max(1, int(frame_rgb.shape[0] * scale))
+        return cv2.resize(frame_rgb, (PROCESSING_WIDTH, height), interpolation=cv2.INTER_AREA)
 
     def _detect_motion(self, gray: np.ndarray) -> bool:
         if self._prev_gray is None:
@@ -63,17 +99,22 @@ class VisionLoop:
     async def _handle_gesture(self, gesture: str | None):
         now = time.time()
         if gesture is None:
-            self._gesture_candidate = None
-            self._gesture_start = 0.0
+            if self._gesture_candidate and now - self._gesture_last_seen <= GESTURE_MISS_GRACE_SECONDS:
+                return
+            self._reset_gesture_candidate()
             return
 
         if gesture != self._gesture_candidate:
             self._gesture_candidate = gesture
             self._gesture_start = now
+            self._gesture_last_seen = now
+            self._gesture_observations = 1
             return
 
+        self._gesture_last_seen = now
+        self._gesture_observations += 1
         held_for = now - self._gesture_start
-        if held_for < GESTURE_HOLD_SECONDS:
+        if held_for < GESTURE_HOLD_SECONDS or self._gesture_observations < GESTURE_MIN_FRAMES:
             return
 
         # Gesture held long enough — check cooldown
@@ -82,43 +123,49 @@ class VisionLoop:
             return
 
         self._gesture_fired_at = now
-        self._gesture_candidate = None
-        self._gesture_start = 0.0
+        self._reset_gesture_candidate()
 
         logger.info(f"Gesture fired: {gesture}")
         await fire_event("vision_addon.gesture_detected", {"gesture": gesture})
         await set_last_gesture(gesture)
 
-    async def _handle_faces(self, face_result: dict, motion: bool):
+    def _reset_gesture_candidate(self):
+        self._gesture_candidate = None
+        self._gesture_start = 0.0
+        self._gesture_last_seen = 0.0
+        self._gesture_observations = 0
+
+    async def _handle_faces(self, face_result: dict, motion: bool, faces_fresh: bool):
         now = time.time()
         faces = face_result["faces"]
         count = face_result["count"]
 
-        if count > 0:
+        if faces_fresh and count > 0:
             await fire_event("vision_addon.face_detected", {"count": count})
 
         person_states = {}
-        for face in faces:
-            name = face["name"]
-            if name == "unknown":
-                last = self._person_fired_at.get("unknown", 0)
-                if now - last > 30:
-                    self._person_fired_at["unknown"] = now
-                    await fire_event("vision_addon.unknown_person", {})
-            else:
-                person_states[name] = True
-                last = self._person_fired_at.get(name, 0)
-                if now - last > 30:
-                    self._person_fired_at[name] = now
-                    await fire_event(
-                        "vision_addon.person_identified",
-                        {"name": name, "friendly_name": name},
-                    )
+        if self.face_engine is not None:
+            for face in faces:
+                name = face["name"]
+                if name == "unknown":
+                    last = self._person_fired_at.get("unknown", 0)
+                    if faces_fresh and now - last > 30:
+                        self._person_fired_at["unknown"] = now
+                        await fire_event("vision_addon.unknown_person", {})
+                else:
+                    person_states[name] = True
+                    last = self._person_fired_at.get(name, 0)
+                    if faces_fresh and now - last > 30:
+                        self._person_fired_at[name] = now
+                        await fire_event(
+                            "vision_addon.person_identified",
+                            {"name": name, "friendly_name": name},
+                        )
 
-        # Mark undetected known people as absent
-        for name in self.face_engine.list_known():
-            if name not in person_states:
-                person_states[name] = False
+            # Mark undetected known people as absent.
+            for name in self.face_engine.list_known():
+                if name not in person_states:
+                    person_states[name] = False
 
         self.known_persons = person_states
 
@@ -144,47 +191,65 @@ class VisionLoop:
             return
 
         if isinstance(source, int):
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        else:
-            # For RTSP: minimise buffer to reduce latency
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+            cap.set(cv2.CAP_PROP_FPS, max(DETECTION_FPS, 10))
+
+        # Minimize capture buffering for both local cameras and RTSP streams.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         interval = 1.0 / DETECTION_FPS
         self.running = True
-        logger.info(f"Vision loop started at {DETECTION_FPS} FPS")
+        logger.info(
+            "Vision loop started at %s FPS, face detection %s, processing width %s",
+            DETECTION_FPS,
+            "enabled" if self.face_engine is not None else "disabled",
+            PROCESSING_WIDTH,
+        )
         await set_last_gesture("none")  # ensure entity exists from startup
 
-        while self.running:
-            loop_start = time.time()
-            ret, frame = cap.read()
-            if not ret:
-                logger.warning("Failed to read frame")
-                await asyncio.sleep(interval)
-                continue
+        try:
+            while self.running:
+                loop_start = time.time()
+                ret, frame = cap.read()
+                if not ret:
+                    logger.warning("Failed to read frame")
+                    await asyncio.sleep(interval)
+                    continue
 
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                processing_rgb = self._processing_frame(frame_rgb)
+                gray = cv2.cvtColor(processing_rgb, cv2.COLOR_RGB2GRAY)
 
-            motion = self._detect_motion(gray)
-            face_result = self.face_engine.process_frame(frame_rgb)
-            gesture = self.gesture_engine.process_frame(frame_rgb)
+                motion = self._detect_motion(gray)
+                gesture = self.gesture_engine.process_frame(processing_rgb)
 
-            await self._handle_gesture(gesture)
-            await self._handle_faces(face_result, motion)
+                face_result = self._last_face_result
+                faces_fresh = False
+                if self.face_engine is not None:
+                    now = time.time()
+                    if now - self._last_face_processed_at >= FACE_DETECTION_INTERVAL:
+                        face_result = self.face_engine.process_frame(processing_rgb)
+                        self._last_face_result = face_result
+                        self._last_face_processed_at = now
+                        faces_fresh = True
 
-            # Encode JPEG for web stream
-            _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            with self.frame_lock:
-                self.latest_frame = jpeg.tobytes()
-                self.latest_faces = face_result["faces"]
-                self.latest_gesture = gesture
+                await self._handle_gesture(gesture)
+                await self._handle_faces(face_result, motion, faces_fresh)
 
-            elapsed = time.time() - loop_start
-            await asyncio.sleep(max(0, interval - elapsed))
+                # Encode JPEG for web stream.
+                _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+                with self.frame_lock:
+                    self.latest_frame = jpeg.tobytes()
+                    self.latest_faces = face_result["faces"]
+                    self.latest_gesture = gesture
 
-        cap.release()
-        self.gesture_engine.close()
+                elapsed = time.time() - loop_start
+                await asyncio.sleep(max(0, interval - elapsed))
+        finally:
+            cap.release()
+            self.gesture_engine.close()
 
 
 async def main():
@@ -195,10 +260,13 @@ async def main():
     config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="warning")
     server = uvicorn.Server(config)
 
-    await asyncio.gather(
-        vision.run(),
-        server.serve(),
-    )
+    try:
+        await asyncio.gather(
+            vision.run(),
+            server.serve(),
+        )
+    finally:
+        await close_session()
 
 
 if __name__ == "__main__":

@@ -1,19 +1,52 @@
 configuration:
-  video_device:
-    name: Video Device
-    description: Path to the webcam device (e.g. /dev/video0)
+  stream_url:
+    name: Stream URL
+    description: RTSP URL or local webcam device path (e.g. /dev/video0).
   detection_fps:
     name: Detection FPS
     description: Frames per second for detection processing (1-15)
+  enable_face_detection:
+    name: Enable Face Detection
+    description: Run the face detector. Disable for lowest gesture latency.
   face_confidence:
     name: Face Confidence Threshold
-    description: Minimum confidence for face recognition match (0.0-1.0)
+    description: Reserved face detection threshold setting.
+  face_detection_interval_seconds:
+    name: Face Detection Interval
+    description: Seconds between face detector runs when face detection is enabled.
   gesture_confidence:
     name: Gesture Confidence Threshold
-    description: Minimum confidence for gesture detection (0.0-1.0)
+    description: Minimum confidence for hand detection.
+  gesture_tracking_confidence:
+    name: Gesture Tracking Confidence
+    description: Minimum confidence for MediaPipe hand tracking.
+  gesture_model_complexity:
+    name: Gesture Model Complexity
+    description: MediaPipe hand model complexity. Use 0 for Raspberry Pi performance.
   gesture_cooldown_seconds:
     name: Gesture Cooldown (seconds)
     description: Minimum seconds between repeated gesture events
+  gesture_hold_seconds:
+    name: Gesture Hold (seconds)
+    description: Seconds a gesture must be stable before firing.
+  gesture_miss_grace_seconds:
+    name: Gesture Miss Grace (seconds)
+    description: Time to tolerate brief missed hand frames without resetting the gesture hold.
+  gesture_min_frames:
+    name: Gesture Minimum Frames
+    description: Minimum matching frames required before firing a gesture.
   motion_cooldown_seconds:
     name: Motion Cooldown (seconds)
     description: Minimum seconds between motion events
+  camera_width:
+    name: Camera Width
+    description: Requested local webcam capture width.
+  camera_height:
+    name: Camera Height
+    description: Requested local webcam capture height.
+  processing_width:
+    name: Processing Width
+    description: Width used for gesture, motion, and face processing. Lower values reduce CPU.
+  jpeg_quality:
+    name: Stream JPEG Quality
+    description: JPEG quality for the web preview stream.

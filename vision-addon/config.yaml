@@ -1,5 +1,5 @@
 name: Vision Addon
-version: "1.1.6"
+version: "1.1.7"
 slug: vision-addon
 description: Camera-based gesture detection for Home Assistant (supports RTSP and local webcam)
 url: "https://github.com/zutlik/ha-addons/tree/main/vision-addon"
@@ -11,19 +11,41 @@ map:
   - share:rw
 options:
   stream_url: "rtsp://admin:7aX2W-@p6@10.100.102.20:554/h264Preview_01_sub"
-  detection_fps: 3
+  detection_fps: 10
+  enable_face_detection: false
   face_confidence: 0.6
-  gesture_confidence: 0.7
+  face_detection_interval_seconds: 3.0
+  gesture_confidence: 0.55
+  gesture_tracking_confidence: 0.5
+  gesture_model_complexity: 0
   gesture_cooldown_seconds: 2
+  gesture_hold_seconds: 0.6
+  gesture_miss_grace_seconds: 0.35
+  gesture_min_frames: 3
   motion_cooldown_seconds: 5
+  camera_width: 640
+  camera_height: 480
+  processing_width: 320
+  jpeg_quality: 65
 schema:
   # RTSP URL (e.g. rtsp://user:pass@ip/live) or local device (/dev/video0)
   stream_url: "str"
   detection_fps: "int"
+  enable_face_detection: "bool"
   face_confidence: "float"
+  face_detection_interval_seconds: "float"
   gesture_confidence: "float"
+  gesture_tracking_confidence: "float"
+  gesture_model_complexity: "int"
   gesture_cooldown_seconds: "int"
+  gesture_hold_seconds: "float"
+  gesture_miss_grace_seconds: "float"
+  gesture_min_frames: "int"
   motion_cooldown_seconds: "int"
+  camera_width: "int"
+  camera_height: "int"
+  processing_width: "int"
+  jpeg_quality: "int"
 restart_policy: unless-stopped
 homeassistant_api: true
 ingress: true

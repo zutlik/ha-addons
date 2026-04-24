@@ -1,3 +1,10 @@
+## 1.1.7
+
+- Disabled face detection by default so gesture recognition owns the fast path.
+- Added optional scheduled face detection for users who still want face events.
+- Reduced gesture latency with a shorter hold time, missed-frame grace, faster MediaPipe hand model, and lower processing resolution.
+- Reused Home Assistant API sessions and skipped unchanged sensor updates to avoid per-frame HTTP overhead.
+
 ## 1.0.0
 
 - Initial release

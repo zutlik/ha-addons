@@ -138,14 +138,22 @@ def create_app(vision) -> FastAPI:
                 "gesture": vision.latest_gesture,
                 "faces": vision.latest_faces,
                 "persons": vision.known_persons,
+                "face_enabled": vision.face_engine is not None,
             }
 
     @app.get("/faces")
     async def list_faces():
+        if vision.face_engine is None:
+            return {"names": [], "enabled": False}
         return {"names": vision.face_engine.list_known()}
 
     @app.post("/faces")
     async def add_face(name: str = Form(...), file: UploadFile = File(...)):
+        if vision.face_engine is None:
+            return JSONResponse(
+                {"ok": False, "error": "Face detection is disabled"},
+                status_code=503,
+            )
         data = await file.read()
         ok = vision.face_engine.register_face(name, data)
         if not ok:
@@ -154,6 +162,8 @@ def create_app(vision) -> FastAPI:
 
     @app.delete("/faces/{name}")
     async def delete_face(name: str):
+        if vision.face_engine is None:
+            return {"ok": False, "error": "Face detection is disabled"}
         removed = vision.face_engine.remove_face(name)
         return {"ok": removed}
 

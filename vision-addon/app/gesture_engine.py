@@ -10,49 +10,70 @@ PIPS = [3, 6, 10, 14, 18]
 
 
 class GestureEngine:
-    def __init__(self, confidence_threshold: float = 0.7):
+    def __init__(
+        self,
+        confidence_threshold: float = 0.55,
+        tracking_confidence: float = 0.5,
+        model_complexity: int = 0,
+    ):
         self.threshold = confidence_threshold
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
+            model_complexity=model_complexity,
             min_detection_confidence=confidence_threshold,
-            min_tracking_confidence=0.5,
+            min_tracking_confidence=tracking_confidence,
         )
 
-    def _fingers_up(self, landmarks) -> list:
+    @staticmethod
+    def _dist(a, b) -> float:
+        return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2) ** 0.5
+
+    def _fingers_up(self, landmarks, handedness: str | None = None) -> list:
         fingers = []
-        # Thumb: compare x (flipped for right hand)
-        fingers.append(1 if landmarks[TIPS[0]].x < landmarks[PIPS[0]].x else 0)
-        # Other fingers: tip y < pip y means extended
+        wrist = landmarks[0]
+
+        # Thumb extension is side-dependent. MediaPipe's handedness can be off
+        # with non-selfie cameras, so fall back to a palm-distance check too.
+        thumb_tip = landmarks[4]
+        thumb_ip = landmarks[3]
+        thumb_mcp = landmarks[2]
+        index_mcp = landmarks[5]
+        if handedness == "Left":
+            thumb_side_open = thumb_tip.x > thumb_ip.x
+        else:
+            thumb_side_open = thumb_tip.x < thumb_ip.x
+        thumb_away_from_palm = (
+            self._dist(thumb_tip, index_mcp) > self._dist(thumb_ip, index_mcp) * 1.08
+        )
+        thumb_from_wrist = (
+            self._dist(thumb_tip, wrist) > self._dist(thumb_mcp, wrist) * 0.95
+        )
+        fingers.append(1 if (thumb_side_open or thumb_away_from_palm) and thumb_from_wrist else 0)
+
+        # For the other fingers, wrist distance is more tolerant of hand rotation
+        # than comparing y coordinates alone.
         for i in range(1, 5):
-            fingers.append(1 if landmarks[TIPS[i]].y < landmarks[PIPS[i]].y else 0)
+            tip = landmarks[TIPS[i]]
+            pip = landmarks[PIPS[i]]
+            fingers.append(1 if self._dist(tip, wrist) > self._dist(pip, wrist) * 1.08 else 0)
         return fingers
 
-    def _classify(self, landmarks) -> str | None:
+    def _classify(self, landmarks, handedness: str | None = None) -> str | None:
         lm = landmarks
-        f = self._fingers_up(lm)
+        f = self._fingers_up(lm, handedness)
         total = sum(f)
-
-        # Helpers
-        def tip(i):
-            return lm[TIPS[i]]
-
-        def base(i):
-            return lm[PIPS[i]]
 
         # Thumbs up: only thumb up, others closed
         if f == [1, 0, 0, 0, 0]:
-            # thumb points up (y decreasing upward)
-            if lm[4].y < lm[3].y < lm[2].y:
+            thumb_dx = abs(lm[4].x - lm[2].x)
+            thumb_dy = lm[4].y - lm[2].y
+            if thumb_dy < -max(0.04, thumb_dx * 0.45):
                 return "thumbs_up"
-            else:
+            if thumb_dy > max(0.04, thumb_dx * 0.45):
                 return "thumbs_down"
-
-        # Thumbs down: only thumb extended downward
-        if f == [1, 0, 0, 0, 0]:
-            if lm[4].y > lm[3].y:
-                return "thumbs_down"
+            return "thumbs_up"
 
         # Open palm: all 5 fingers up
         if total == 5:
@@ -97,11 +118,19 @@ class GestureEngine:
         return None
 
     def process_frame(self, frame_rgb: np.ndarray) -> str | None:
-        result = self.hands.process(frame_rgb)
+        was_writeable = frame_rgb.flags.writeable
+        frame_rgb.flags.writeable = False
+        try:
+            result = self.hands.process(frame_rgb)
+        finally:
+            frame_rgb.flags.writeable = was_writeable
         if not result.multi_hand_landmarks:
             return None
         landmarks = result.multi_hand_landmarks[0].landmark
-        return self._classify(landmarks)
+        handedness = None
+        if result.multi_handedness:
+            handedness = result.multi_handedness[0].classification[0].label
+        return self._classify(landmarks, handedness)
 
     def close(self):
         self.hands.close()
