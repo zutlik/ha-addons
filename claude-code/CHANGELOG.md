@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.10.12 - Fix HA MCP server location: write to user-level settings
+- Claude Code loads MCP servers from `$HOME/.claude/settings.json` (user-level),
+  not from the project `.claude/settings.json`. Fixed run.sh to write the MCP
+  config to the user-level file; also writes project-level as belt-and-suspenders.
+
 ## v1.10.11 - Fix HA MCP token: write real value, refresh on every restart
 - Claude Code's SSE `headers` do not support `${VAR}` env-var substitution,
   so the `${SUPERVISOR_TOKEN}` placeholder written in v1.10.10 never connected.

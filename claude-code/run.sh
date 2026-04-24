@@ -215,42 +215,50 @@ else
 fi
 
 # ============================================================
-# Configure HA MCP server in workspace settings.
+# Configure HA MCP server in user-level Claude settings.
 #
-# Writes the homeassistant MCP entry into $WORK_DIR/.claude/settings.json
-# so Claude has structured tool access to HA (get_entity, call_service, etc.)
-# without raw curl. The validated token (from $_TOKEN_FILE) is written
-# directly — Claude Code's SSE header support does not perform env-var
-# substitution, so the real value must be present in the file.
+# Claude Code loads MCP servers from $HOME/.claude/settings.json (user-level),
+# not from the project .claude/settings.json. We write to both to be safe, but
+# the user-level file is what actually takes effect at startup.
 #
-# The MCP server is always at http://homeassistant:8123/mcp_server/sse
-# regardless of which token/URL was selected above (the supervisor proxy
-# does not expose /mcp_server).
+# The validated token (from $_TOKEN_FILE) is written directly on every restart —
+# Claude Code's SSE header support does not perform env-var substitution, and
+# refreshing on each restart keeps the token current after rotation.
 #
-# On every restart the token in settings.json is refreshed from $_TOKEN_FILE,
-# so a rotated LLAT or a newly injected SUPERVISOR_TOKEN is always current.
+# The MCP endpoint is always http://homeassistant:8123/mcp_server/sse —
+# the supervisor proxy does not expose /mcp_server, so this is independent
+# of the HA_URL selected above.
 # ============================================================
-_SETTINGS_FILE="$WORK_DIR/.claude/settings.json"
 _MCP_TOKEN=$(cat "$_TOKEN_FILE" 2>/dev/null || echo '')
-mkdir -p "$WORK_DIR/.claude"
-[ ! -f "$_SETTINGS_FILE" ] && echo '{}' > "$_SETTINGS_FILE"
-chmod 666 "$_SETTINGS_FILE" 2>/dev/null || true
 
-if [ -n "$_MCP_TOKEN" ]; then
-    _UPDATED=$(jq --arg tok "Bearer $_MCP_TOKEN" '
+_write_mcp_config() {
+    local _f="$1"
+    mkdir -p "$(dirname "$_f")"
+    [ ! -f "$_f" ] && echo '{}' > "$_f"
+    local _updated
+    _updated=$(jq --arg tok "Bearer $_MCP_TOKEN" '
         .mcpServers //= {} |
         .mcpServers.homeassistant = {
             "type": "sse",
             "url": "http://homeassistant:8123/mcp_server/sse",
             "headers": {"Authorization": $tok}
         }
-    ' "$_SETTINGS_FILE" 2>/dev/null)
-    if [ -n "$_UPDATED" ]; then
-        echo "$_UPDATED" > "$_SETTINGS_FILE"
-        echo "[claude-code] HA MCP server configured in settings.json."
+    ' "$_f" 2>/dev/null)
+    if [ -n "$_updated" ]; then
+        echo "$_updated" > "$_f"
+        chmod 666 "$_f" 2>/dev/null || true
+        echo "[claude-code] HA MCP server configured in $f."
     else
-        echo "[claude-code] WARNING: could not update settings.json with HA MCP config."
+        echo "[claude-code] WARNING: could not update $f with HA MCP config."
     fi
+}
+
+if [ -n "$_MCP_TOKEN" ]; then
+    # User-level settings — loaded by Claude Code at startup
+    _write_mcp_config "$CLAUDE_HOME/.claude/settings.json"
+    # Project-level settings — belt-and-suspenders
+    mkdir -p "$WORK_DIR/.claude"
+    _write_mcp_config "$WORK_DIR/.claude/settings.json"
 else
     echo "[claude-code] WARNING: no HA token available — skipping MCP server config."
 fi
