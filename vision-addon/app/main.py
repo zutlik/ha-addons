@@ -6,8 +6,14 @@ import threading
 import urllib.parse
 import numpy as np
 
-# Must be set before cv2 is imported so ffmpeg uses TCP for RTSP.
-os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+# Must be set before cv2 is imported so ffmpeg uses TCP for RTSP and gives up
+# on a stalled read within ~5s instead of the default ~30s. Without stimeout,
+# cap.read() can block long enough that our recovery threshold never trips
+# in a useful timeframe.
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rtsp_transport;tcp|stimeout;5000000",
+)
 import cv2
 
 from gesture_engine import GestureEngine
@@ -88,9 +94,11 @@ def _reset_startup_attempts() -> None:
 
 
 RECOVERY_INTERVAL_SECONDS = 30.0
-# Frames of consecutive read failures before we declare the stream unhealthy
-# and try recovery. At 10 FPS this is ~3 seconds.
-UNHEALTHY_FAILURE_THRESHOLD = 30
+# Seconds without a successful frame before we declare the stream unhealthy
+# and try recovery. Time-based, not frame-count-based — when RTSP stalls,
+# OpenCV's cap.read() blocks for the FFmpeg stimeout (~5s) before returning
+# False, so a frame-count gate would wait far too long.
+UNHEALTHY_AGE_SECONDS = 5.0
 
 
 class VisionLoop:
@@ -116,6 +124,7 @@ class VisionLoop:
 
         # Stream-health tracking
         self._consecutive_failures = 0
+        self._first_failure_time = 0.0
         self._last_recovery_attempt = 0.0
 
         # Shared state for web UI
@@ -312,13 +321,15 @@ class VisionLoop:
                 loop_start = time.time()
                 ret, frame = cap.read()
                 if not ret:
-                    self._consecutive_failures += 1
-                    if self._consecutive_failures == 1:
-                        logger.warning("Stream stalled (frame read failed)")
-
                     now = time.time()
+                    if self._consecutive_failures == 0:
+                        self._first_failure_time = now
+                        logger.warning("Stream stalled (frame read failed)")
+                    self._consecutive_failures += 1
+
+                    failure_age = now - self._first_failure_time
                     if (
-                        self._consecutive_failures >= UNHEALTHY_FAILURE_THRESHOLD
+                        failure_age >= UNHEALTHY_AGE_SECONDS
                         and now - self._last_recovery_attempt >= RECOVERY_INTERVAL_SECONDS
                     ):
                         self._last_recovery_attempt = now
@@ -333,6 +344,7 @@ class VisionLoop:
                         self._consecutive_failures,
                     )
                     self._consecutive_failures = 0
+                    self._first_failure_time = 0.0
 
                 if not self._first_frame_seen:
                     self._first_frame_seen = True

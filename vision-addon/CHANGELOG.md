@@ -1,3 +1,15 @@
+## 1.2.3
+
+- **Fix: stream recovery now actually fires.** The unhealthy threshold was
+  frame-count-based (30 failures), but when RTSP stalls OpenCV's `cap.read()`
+  blocks for the FFmpeg socket timeout (~30s default) before returning False
+  — meaning the gate would have taken ~15 minutes to trip. Switched to a
+  time-based threshold (5 seconds without a successful frame).
+- Lowered FFmpeg's RTSP socket timeout to 5s via
+  `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp|stimeout;5000000`. Stalled
+  reads now return False quickly instead of blocking 30s, so the recovery
+  loop can react and reconnect promptly.
+
 ## 1.2.2
 
 - Reordered configuration options into logical groups (HA, Camera, Capture,
