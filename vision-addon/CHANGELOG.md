@@ -1,3 +1,22 @@
+## 1.2.1
+
+- **Replaced the live DHCP WebSocket watcher with on-demand resolution.**
+  The previous design held an open subscription to receive IP-change pushes,
+  but HA's DHCP integration does not reliably notify on lease renewals
+  (broadcast-only sniffing), so silent stalls were possible. The addon now
+  reacts to the only signal that always works: the camera stream itself
+  failing.
+- Vision loop tracks consecutive frame-read failures. After ~3 seconds of
+  failures it triggers recovery: re-resolve the hostname via a fresh
+  WebSocket subscribe (which always returns the current address table) and
+  reopen the RTSP capture with the resolved URL. Same URL or different —
+  the capture is always reopened, which also handles transient RTSP drops.
+- Recovery is throttled to once every 30 seconds and retries forever, so a
+  camera that comes back online (same IP or new IP) is picked up
+  automatically without restarting the addon.
+- `dhcp_discovery.py` simplified to a single stateless `resolve_hostname_ip()`
+  function — no long-lived connection, no race conditions.
+
 ## 1.2.0
 
 - **Camera IP auto-discovery via HA's DHCP integration.** Configure the

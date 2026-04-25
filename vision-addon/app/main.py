@@ -12,7 +12,7 @@ import cv2
 
 from gesture_engine import GestureEngine
 from ha_client import close_session, fire_event, set_last_gesture, update_sensors
-from dhcp_discovery import DHCPDiscovery, DHCPDiscoveryError
+from dhcp_discovery import DHCPDiscoveryError, resolve_hostname_ip
 from web_ui import create_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -87,8 +87,17 @@ def _reset_startup_attempts() -> None:
         logger.warning("Could not reset startup attempts file: %s", e)
 
 
+RECOVERY_INTERVAL_SECONDS = 30.0
+# Frames of consecutive read failures before we declare the stream unhealthy
+# and try recovery. At 10 FPS this is ~3 seconds.
+UNHEALTHY_FAILURE_THRESHOLD = 30
+
+
 class VisionLoop:
-    def __init__(self, initial_stream_url: str):
+    def __init__(self, initial_stream_url: str, recover=None):
+        """``recover`` is an optional async callable that returns a fresh stream
+        URL (or None to keep the current one) when the loop asks for recovery.
+        """
         self.face_engine = None
         if ENABLE_FACE_DETECTION:
             from face_engine import FaceEngine
@@ -102,8 +111,12 @@ class VisionLoop:
         )
         self.running = False
         self._stream_url = initial_stream_url
-        self._pending_stream_url: str | None = None
+        self._recover = recover
         self._first_frame_seen = False
+
+        # Stream-health tracking
+        self._consecutive_failures = 0
+        self._last_recovery_attempt = 0.0
 
         # Shared state for web UI
         self.latest_frame: bytes = b""
@@ -127,12 +140,6 @@ class VisionLoop:
         self._person_fired_at: dict = {}
         self._last_face_result = {"count": 0, "faces": []}
         self._last_face_processed_at: float = 0.0
-
-    def update_stream_url(self, new_url: str) -> None:
-        """Request the capture loop to reopen with a new URL on its next iteration."""
-        if new_url != self._stream_url:
-            logger.info("Stream URL update queued: %s", _redact(new_url))
-            self._pending_stream_url = new_url
 
     def _processing_frame(self, frame_rgb: np.ndarray) -> np.ndarray:
         if PROCESSING_WIDTH <= 0 or frame_rgb.shape[1] <= PROCESSING_WIDTH:
@@ -253,6 +260,37 @@ class VisionLoop:
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         return cap
 
+    async def _attempt_recovery(self, cap: cv2.VideoCapture) -> cv2.VideoCapture:
+        """Re-resolve the stream URL (if a recover callback was provided) and
+        reopen the capture. Always reopens, even if the URL is unchanged —
+        this also recovers from transient RTSP drops at the same IP. Never
+        raises; returns a (possibly closed) capture object."""
+        logger.info(
+            "Attempting recovery (failed frames=%d, current=%s)",
+            self._consecutive_failures,
+            _redact(self._stream_url),
+        )
+        if self._recover is not None:
+            try:
+                new_url = await self._recover()
+            except Exception as e:
+                logger.warning("Recovery callback failed: %s", e)
+                new_url = None
+            if new_url and new_url != self._stream_url:
+                logger.info("Stream URL updated: %s", _redact(new_url))
+                self._stream_url = new_url
+        cap.release()
+        new_cap = self._open_capture()
+        if new_cap is None:
+            logger.warning(
+                "Capture reopen failed; will retry in %.0fs",
+                RECOVERY_INTERVAL_SECONDS,
+            )
+            # Return a closed cap; the loop's read() will keep failing and
+            # _last_recovery_attempt throttles the next try.
+            return cap
+        return new_cap
+
     async def run(self):
         cap = self._open_capture()
         if cap is None:
@@ -271,24 +309,30 @@ class VisionLoop:
 
         try:
             while self.running:
-                # Honor URL changes requested by the DHCP watcher.
-                if self._pending_stream_url:
-                    new_url = self._pending_stream_url
-                    self._pending_stream_url = None
-                    self._stream_url = new_url
-                    logger.info("Reopening capture with new URL: %s", _redact(new_url))
-                    cap.release()
-                    cap = self._open_capture()
-                    if cap is None:
-                        await asyncio.sleep(2.0)
-                        continue
-
                 loop_start = time.time()
                 ret, frame = cap.read()
                 if not ret:
-                    logger.warning("Failed to read frame")
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures == 1:
+                        logger.warning("Stream stalled (frame read failed)")
+
+                    now = time.time()
+                    if (
+                        self._consecutive_failures >= UNHEALTHY_FAILURE_THRESHOLD
+                        and now - self._last_recovery_attempt >= RECOVERY_INTERVAL_SECONDS
+                    ):
+                        self._last_recovery_attempt = now
+                        cap = await self._attempt_recovery(cap)
+
                     await asyncio.sleep(interval)
                     continue
+
+                if self._consecutive_failures:
+                    logger.info(
+                        "Stream recovered after %d failed frame reads",
+                        self._consecutive_failures,
+                    )
+                    self._consecutive_failures = 0
 
                 if not self._first_frame_seen:
                     self._first_frame_seen = True
@@ -329,18 +373,7 @@ class VisionLoop:
             self.gesture_engine.close()
 
 
-async def _resolve_stream_source() -> tuple[str, DHCPDiscovery | None]:
-    """Return (stream_url, dhcp_instance_or_None).
-
-    If STREAM_URL env var is set, it's used directly and no discovery happens.
-    Otherwise we resolve CAMERA_HOSTNAME via HA's DHCP discovery and return the
-    resulting RTSP URL plus the still-connected DHCPDiscovery instance for the
-    caller to keep watching.
-    """
-    if STREAM_URL:
-        logger.info("Using STREAM_URL override: %s", _redact(STREAM_URL))
-        return STREAM_URL, None
-
+def _validate_discovery_config() -> None:
     if not CAMERA_HOSTNAME:
         raise RuntimeError(
             "No stream source configured: set either stream_url or camera_hostname."
@@ -355,47 +388,50 @@ async def _resolve_stream_source() -> tuple[str, DHCPDiscovery | None]:
             "camera_user and camera_password are required when using DHCP discovery."
         )
 
-    dhcp = DHCPDiscovery(HA_URL, HA_TOKEN, CAMERA_HOSTNAME)
+
+async def _resolve_initial_stream_url() -> str:
+    """Resolve the initial stream URL at startup, raising RuntimeError on
+    misconfiguration. STREAM_URL override skips discovery entirely."""
+    if STREAM_URL:
+        logger.info("Using STREAM_URL override: %s", _redact(STREAM_URL))
+        return STREAM_URL
+
+    _validate_discovery_config()
     try:
-        ip = await dhcp.resolve(timeout=DISCOVERY_TIMEOUT_SECONDS)
-    except (DHCPDiscoveryError, asyncio.TimeoutError) as e:
-        await dhcp.close()
+        ip = await resolve_hostname_ip(
+            HA_URL, HA_TOKEN, CAMERA_HOSTNAME, timeout=DISCOVERY_TIMEOUT_SECONDS,
+        )
+    except DHCPDiscoveryError as e:
         raise RuntimeError(f"DHCP discovery failed: {e}") from e
-    except Exception:
-        await dhcp.close()
-        raise
-
-    return _build_rtsp_url(ip), dhcp
+    return _build_rtsp_url(ip)
 
 
-async def _watch_ip_changes(dhcp: DHCPDiscovery, vision: VisionLoop) -> None:
-    async def on_change(new_ip: str) -> None:
-        vision.update_stream_url(_build_rtsp_url(new_ip))
-
+async def _recovery_resolve() -> str | None:
+    """Recovery callback: re-resolve hostname → fresh RTSP URL. Returns None
+    on failure so the vision loop can still reopen with its current URL."""
+    if STREAM_URL or not CAMERA_HOSTNAME:
+        return None
     try:
-        await dhcp.watch(on_change)
-    except Exception:
-        logger.exception("DHCP watcher exited; live IP updates disabled until restart.")
+        ip = await resolve_hostname_ip(HA_URL, HA_TOKEN, CAMERA_HOSTNAME, timeout=10.0)
+    except DHCPDiscoveryError as e:
+        logger.warning("Recovery DHCP resolve failed: %s", e)
+        return None
+    return _build_rtsp_url(ip)
 
 
 async def main():
-    stream_url, dhcp = await _resolve_stream_source()
-    vision = VisionLoop(initial_stream_url=stream_url)
+    stream_url = await _resolve_initial_stream_url()
+    recover = _recovery_resolve if not STREAM_URL else None
+    vision = VisionLoop(initial_stream_url=stream_url, recover=recover)
     app = create_app(vision)
 
     import uvicorn
     config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="warning")
     server = uvicorn.Server(config)
 
-    tasks = [vision.run(), server.serve()]
-    if dhcp is not None:
-        tasks.append(_watch_ip_changes(dhcp, vision))
-
     try:
-        await asyncio.gather(*tasks)
+        await asyncio.gather(vision.run(), server.serve())
     finally:
-        if dhcp is not None:
-            await dhcp.close()
         await close_session()
 
 
