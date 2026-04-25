@@ -12,11 +12,14 @@ Before starting, fill in the add-on configuration:
 
 | Option | Required | Default | Description |
 |---|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | No | — | Bot token from [@BotFather](https://t.me/BotFather). Enables Telegram integration. |
+| `TELEGRAM_BOT_TOKEN` | No | — | Bot token from [@BotFather](https://t.me/BotFather). Enables Telegram channel startup and direct startup DMs. |
+| `TELEGRAM_CHAT_ID` | No | — | Your numeric Telegram user/chat ID. When set, the add-on sends startup DMs and pre-allowlists that ID for Telegram input. |
 | `WORK_DIR` | No | `/share/claude-workspace` | Directory where Claude Code runs and stores files. |
 | `AUTO_UPDATE_CHECK` | No | `true` | Check for Claude Code updates on each startup. Only downloads if a newer version is available. |
+| `DAEMON_AUTOSTART` | No | `true` | Set false to keep only the Web UI terminal running for manual setup or debugging. |
+| `HA_TOKEN` | No | — | Long-Lived Access Token fallback for Home Assistant API access if the supervisor token is unavailable. |
 
-If you want Telegram, create a bot with [@BotFather](https://t.me/BotFather) now and copy the token into `TELEGRAM_BOT_TOKEN` before proceeding.
+If you want Telegram, create a bot with [@BotFather](https://t.me/BotFather) now and copy the token into `TELEGRAM_BOT_TOKEN`. For the smoothest first boot, also set `TELEGRAM_CHAT_ID` to your numeric Telegram user ID from [@userinfobot](https://t.me/userinfobot).
 
 ### Step 2 — Authenticate with your Claude.ai account
 
@@ -35,11 +38,12 @@ Go back to the add-on page and click **Restart**.
 
 On this restart, the add-on will automatically:
 1. Detect that you are now authenticated.
-2. If `TELEGRAM_BOT_TOKEN` is set — run the full Telegram plugin setup:
-   - Install the official Anthropic plugin marketplace
-   - Install the Telegram channel plugin
-   - Configure the bot token
-3. Start Claude Code with the Telegram channel active (`--channels plugin:telegram@claude-plugins-official`).
+2. Ensure the Home Assistant MCP server is registered for Claude Code.
+3. If `TELEGRAM_BOT_TOKEN` is set:
+   - Write the bot token to `/data/claude/.claude/channels/telegram/.env`
+   - Enable `telegram@claude-plugins-official` in Claude Code user settings
+   - If `TELEGRAM_CHAT_ID` is set, write it to the Telegram allowlist
+   - Start Claude Code with `--channels plugin:telegram@claude-plugins-official`
 
 > **That's it.** Claude Code is now running. You do not need to touch the terminal again unless something goes wrong.
 
@@ -47,11 +51,19 @@ On this restart, the add-on will automatically:
 
 ## Telegram — Pairing your account
 
-After the restart, Claude Code starts polling Telegram for messages, but it won't respond to anyone until you pair your account:
+After the restart, Claude Code starts polling Telegram for messages.
+
+If `TELEGRAM_CHAT_ID` is set, the add-on pre-allowlists that ID and your DM should reach Claude directly.
+
+If `TELEGRAM_CHAT_ID` is not set, use the plugin's pairing flow:
 
 1. Open Telegram and DM your bot (e.g. `/start`).
 2. The bot replies with a **pairing code**.
-3. Open the **Web UI terminal** and approve the pairing — type `yes` when prompted.
+3. Open the **Web UI terminal**, run `claude-attach`, then type these in Claude Code:
+   ```
+   /telegram:access pair <code>
+   /telegram:access policy allowlist
+   ```
 
 After pairing, you can send prompts to Claude Code directly from Telegram and receive responses.
 
@@ -65,7 +77,7 @@ When Claude Code starts, it registers a remote control session reachable from an
 
 The session URL is automatically:
 - Printed in the **add-on log** (Supervisor → Claude Code → Log)
-- Saved to `/data/remote_control_url.txt` (readable from the Web UI terminal: `cat /data/remote_control_url.txt`)
+- Saved to `/data/claude/remote_control_url.txt` (readable from the Web UI terminal: `cat /data/claude/remote_control_url.txt`)
 - Shown as a **persistent notification** in your Home Assistant dashboard
 
 Open the URL in any browser or the Claude mobile app to control the running session remotely.
@@ -77,8 +89,8 @@ Open the URL in any browser or the Claude mobile app to control the running sess
 Claude Code always starts with `--continue` to resume the previous session.
 
 A `CLAUDE.md` file is automatically created in your workspace on first run. It instructs Claude to:
-- Read `memory.md` at the start of every session to restore context
-- Update `memory.md` at the end of each session with tasks, preferences, and discoveries
+- Read `MEMORY.md` at the start of every session to restore context
+- Update `MEMORY.md` at the end of each session with tasks, preferences, and discoveries
 - Mention remembered context proactively when relevant
 
 This gives Claude persistent memory across restarts without any manual effort.
@@ -87,7 +99,7 @@ This gives Claude persistent memory across restarts without any manual effort.
 
 ## Updates
 
-When `AUTO_UPDATE_CHECK` is enabled (default), the add-on checks npm for a newer `@anthropic-ai/claude-code` version on every startup. If a new version is found, it downloads and installs it once — the binary lives in `/data/npm-global` (persistent storage) and is reused on subsequent restarts.
+When `AUTO_UPDATE_CHECK` is enabled (default), the add-on checks npm for a newer `@anthropic-ai/claude-code` version on every startup. If a new version is found, it downloads and installs it once — the binary lives in `/data/claude/npm-global` (persistent storage) and is reused on subsequent restarts.
 
 **To force a manual update:** disable `AUTO_UPDATE_CHECK`, restart, re-enable it, restart again.
 
@@ -100,7 +112,7 @@ The **Open Web UI** button opens a full bash terminal in your browser (via ttyd)
 - Approve Telegram pairing codes
 - Inspect workspace files
 - Run `claude` interactively for debugging
-- Check `cat /data/remote_control_url.txt` for the latest remote control URL
+- Check `cat /data/claude/remote_control_url.txt` for the latest remote control URL
 
 ---
 
@@ -114,4 +126,4 @@ scp ~/.claude/.credentials.json \
   root@homeassistant.local:/data/addon_data/local_claude-code/claude/.claude/
 ```
 
-Then restart the add-on — it will detect the credentials and proceed directly to Telegram setup.
+Then restart the add-on — it will detect the credentials and proceed directly to the daemon startup.

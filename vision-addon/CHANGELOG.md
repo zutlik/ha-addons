@@ -13,10 +13,8 @@
 - Removed the supervisor token path. `homeassistant_api: true` is no longer
   needed; all HA API access flows through the LLAT against
   `http://homeassistant:8123`.
-- Startup hardening: 60-second timeout per attempt; supervisor restarts on
-  failure; capped at 3 consecutive failures via a counter file in `/data`.
-- `restart_policy` changed from `unless-stopped` to `on-failure` so the
-  retry cap actually takes effect.
+- Startup hardening: 60-second timeout per attempt; capped at 3 consecutive
+  failures via a counter file in `/data`.
 
 ## 1.1.8
 

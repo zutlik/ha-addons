@@ -18,11 +18,9 @@ options:
 schema:
   NGROK_AUTH_TOKEN: "str"
   PORT: "int"
-restart_policy: unless-stopped
 image: "m3nadav/publish-scripts"
 homeassistant_api: true
 ingress: true
-ingress_port: 8099
 panel_icon: mdi:script-text
 panel_title: "Publish Scripts"
 panel_admin: false

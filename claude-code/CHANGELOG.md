@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.10.14 - Harden Telegram, MCP first boot, resume guards, and docs
+- Preconfigure the Telegram channel deterministically when `TELEGRAM_BOT_TOKEN`
+  is set: write the plugin `.env`, enable `telegram@claude-plugins-official`
+  in user settings, pass Telegram env vars into tmux, and pre-allowlist
+  `TELEGRAM_CHAT_ID` when supplied.
+- Move `claude mcp add homeassistant ...` after the Claude Code install/update
+  block so fresh data dirs with copied credentials register HA MCP on the first
+  valid boot.
+- Derive the Claude session project path from `WORK_DIR` instead of assuming
+  `/share/claude-workspace`.
+- Replace every-boot recursive `/data/claude` chmod with a one-time migration
+  marker to reduce startup time and SD-card write churn.
+- Update docs/translations to match current Telegram setup and the actual
+  remote-control URL/state paths.
+
 ## v1.10.13 - Fix HA MCP registration: use `claude mcp add` instead of settings.json
 - MCP servers are stored in `$HOME/.claude.json`, not `settings.json`. Writing
   to settings.json (v1.10.10–v1.10.12) had no effect.

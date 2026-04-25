@@ -18,9 +18,17 @@ CLAUDE_HOME="/data/claude"
 # ============================================================
 mkdir -p "$CLAUDE_HOME"
 chmod 777 "$CLAUDE_HOME"
-# Legacy boots created subtrees as root; without CAP_CHOWN we can't chown,
-# so make everything under /data/claude writable by the claude user.
-chmod -R a+rwX "$CLAUDE_HOME" 2>/dev/null || true
+# Legacy boots created subtrees as root; without relying on chown, make the
+# existing tree writable once, then keep future boots cheap for SD-card installs.
+_PERMS_MARKER="$CLAUDE_HOME/.permissions_migrated_v1"
+if [ ! -e "$_PERMS_MARKER" ]; then
+    echo "[claude-code] Running one-time permissions migration for $CLAUDE_HOME..."
+    chmod -R a+rwX "$CLAUDE_HOME" 2>/dev/null || true
+    printf '%s\n' "$(date -Iseconds 2>/dev/null || date)" > "$_PERMS_MARKER" 2>/dev/null || true
+    chmod 666 "$_PERMS_MARKER" 2>/dev/null || true
+else
+    chmod a+rwX "$CLAUDE_HOME" "$CLAUDE_HOME/.claude" "$CLAUDE_HOME/.npm" "$CLAUDE_HOME/npm-global" 2>/dev/null || true
+fi
 
 # ============================================================
 # HA token + URL selection
@@ -112,10 +120,12 @@ DAEMON_AUTOSTART=$(get_option "DAEMON_AUTOSTART" "true")
 # The plugin stores its token in ~/.claude/channels/telegram/.env and the
 # allowed chat IDs in access.json — use those so startup pings work even
 # when the addon options are left blank.
-PLUGIN_ENV="$CLAUDE_HOME/.claude/channels/telegram/.env"
-ACCESS_JSON="$CLAUDE_HOME/.claude/channels/telegram/access.json"
+CLAUDE_SETTINGS="$CLAUDE_HOME/.claude/settings.json"
+TELEGRAM_PLUGIN_DIR="$CLAUDE_HOME/.claude/channels/telegram"
+PLUGIN_ENV="$TELEGRAM_PLUGIN_DIR/.env"
+ACCESS_JSON="$TELEGRAM_PLUGIN_DIR/access.json"
 if [ -z "$TELEGRAM_TOKEN" ] && [ -f "$PLUGIN_ENV" ]; then
-    TELEGRAM_TOKEN=$(grep -oP '(?<=TELEGRAM_BOT_TOKEN=).+' "$PLUGIN_ENV" | head -1)
+    TELEGRAM_TOKEN=$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' "$PLUGIN_ENV" | head -1)
     echo "[claude-code] Telegram: token loaded from plugin .env"
 fi
 if [ -z "$TELEGRAM_CHAT_ID" ] && [ -f "$ACCESS_JSON" ]; then
@@ -123,8 +133,88 @@ if [ -z "$TELEGRAM_CHAT_ID" ] && [ -f "$ACCESS_JSON" ]; then
     [ -n "$TELEGRAM_CHAT_ID" ] && echo "[claude-code] Telegram: chat_id ${TELEGRAM_CHAT_ID} loaded from access.json"
 fi
 
+merge_json_file() {
+    local file="$1" patch="$2" label="$3"
+    mkdir -p "$(dirname "$file")"
+    chmod a+rwX "$(dirname "$file")" 2>/dev/null || true
+    [ ! -f "$file" ] && printf '{}\n' > "$file"
+    chmod 666 "$file" 2>/dev/null || true
+
+    if MERGED=$(jq --argjson patch "$patch" '. * $patch' "$file" 2>/dev/null); then
+        printf '%s\n' "$MERGED" > "$file"
+    else
+        printf '%s\n' "$patch" > "$file"
+        echo "[claude-code] WARNING: replaced malformed $label with a fresh JSON file."
+    fi
+    chmod 666 "$file" 2>/dev/null || true
+}
+
+configure_telegram_channel() {
+    [ -n "$TELEGRAM_TOKEN" ] || return 0
+
+    mkdir -p "$TELEGRAM_PLUGIN_DIR"
+    chmod a+rwX "$CLAUDE_HOME/.claude" "$CLAUDE_HOME/.claude/channels" "$TELEGRAM_PLUGIN_DIR" 2>/dev/null || true
+    chmod 666 "$PLUGIN_ENV" 2>/dev/null || true
+    printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_TOKEN" \
+        | su -s /bin/bash claude -c "
+            set -e
+            umask 077
+            mkdir -p '$TELEGRAM_PLUGIN_DIR'
+            cat > '$PLUGIN_ENV'
+            chmod 600 '$PLUGIN_ENV' 2>/dev/null || true
+        " \
+        && echo "[claude-code] Telegram: bot token written to plugin .env." \
+        || echo "[claude-code] WARNING: failed to write Telegram plugin .env."
+
+    TELEGRAM_SETTINGS_PATCH=$(cat <<'JSON'
+{
+  "enabledPlugins": {
+    "telegram@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  }
+}
+JSON
+)
+    merge_json_file "$CLAUDE_SETTINGS" "$TELEGRAM_SETTINGS_PATCH" "Claude Code user settings"
+    echo "[claude-code] Telegram: official channel plugin enabled in user settings."
+
+    [ -f "$ACCESS_JSON" ] && chmod 666 "$ACCESS_JSON" 2>/dev/null || true
+    if [ -n "$TELEGRAM_CHAT_ID" ]; then
+        mkdir -p "$TELEGRAM_PLUGIN_DIR"
+        chmod a+rwX "$TELEGRAM_PLUGIN_DIR" 2>/dev/null || true
+        [ ! -f "$ACCESS_JSON" ] && printf '{}\n' > "$ACCESS_JSON"
+        chmod 666 "$ACCESS_JSON" 2>/dev/null || true
+        if UPDATED_ACCESS=$(jq --arg id "$TELEGRAM_CHAT_ID" '
+            .dmPolicy = (if (.dmPolicy // "pairing") == "disabled" then "disabled" else "allowlist" end)
+            | .allowFrom = (((.allowFrom // []) + [$id]) | unique)
+            | .groups = (.groups // {})
+            | .pending = (.pending // {})
+        ' "$ACCESS_JSON" 2>/dev/null); then
+            printf '%s\n' "$UPDATED_ACCESS" > "$ACCESS_JSON"
+        else
+            jq -n --arg id "$TELEGRAM_CHAT_ID" \
+                '{dmPolicy:"allowlist", allowFrom:[$id], groups:{}, pending:{}}' > "$ACCESS_JSON"
+            echo "[claude-code] WARNING: replaced malformed Telegram access.json with a fresh allowlist."
+        fi
+        chmod 666 "$ACCESS_JSON" 2>/dev/null || true
+        echo "[claude-code] Telegram: chat ${TELEGRAM_CHAT_ID} is allowlisted for inbound messages."
+    elif [ ! -f "$ACCESS_JSON" ]; then
+        printf '{"dmPolicy":"pairing","allowFrom":[],"groups":{},"pending":{}}\n' > "$ACCESS_JSON"
+        chmod 666 "$ACCESS_JSON" 2>/dev/null || true
+        echo "[claude-code] Telegram: no chat_id set; first DM will use the pairing-code flow."
+    fi
+}
+
 mkdir -p "$WORK_DIR"
 chmod 777 "$WORK_DIR" 2>/dev/null || true
+configure_telegram_channel
 
 # ============================================================
 # Telegram config diagnostics + startup ping. Fires independently of URL
@@ -215,38 +305,6 @@ else
 fi
 
 # ============================================================
-# Configure HA MCP server via `claude mcp add`.
-#
-# Claude Code stores MCP server config in $HOME/.claude.json (not settings.json).
-# The only reliable way to register a server is `claude mcp add`, which writes
-# to that file in the correct format.
-#
-# We run this as the claude user (HOME=$CLAUDE_HOME) so the write lands in the
-# right .claude.json. The --scope user flag stores it persistently; re-running
-# `claude mcp add` on an existing name overwrites it, so the token stays current
-# after rotation without any extra cleanup.
-#
-# The MCP endpoint is always http://homeassistant:8123/mcp_server/sse —
-# independent of HA_URL above (the supervisor proxy does not expose /mcp_server).
-# ============================================================
-_MCP_TOKEN=$(cat "$_TOKEN_FILE" 2>/dev/null || echo '')
-
-if [ -n "$_MCP_TOKEN" ]; then
-    su -s /bin/bash claude -c "
-        export HOME=$CLAUDE_HOME
-        export NPM_GLOBAL=$CLAUDE_HOME/npm-global
-        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
-        claude mcp add homeassistant 'http://homeassistant:8123/mcp_server/sse' \
-            -t sse -s user \
-            -H 'Authorization: Bearer $_MCP_TOKEN' \
-            2>&1
-    " && echo "[claude-code] HA MCP server registered via claude mcp add." \
-      || echo "[claude-code] WARNING: claude mcp add failed — HA MCP server not registered."
-else
-    echo "[claude-code] WARNING: no HA token available — skipping MCP server config."
-fi
-
-# ============================================================
 # Run setup as the claude user so all files under /data/claude/
 # are created with claude ownership (no chown needed).
 # ============================================================
@@ -283,6 +341,40 @@ su -s /bin/bash claude -c "
 "
 
 # ============================================================
+# Configure HA MCP server via `claude mcp add`.
+#
+# Claude Code stores MCP server config in $HOME/.claude.json (not settings.json).
+# The only reliable way to register a server is `claude mcp add`, which writes
+# to that file in the correct format.
+#
+# This must run after the install/update block above. On a fresh data dir with
+# copied credentials, `claude` may not exist until npm install completes.
+#
+# The MCP endpoint is always http://homeassistant:8123/mcp_server/sse —
+# independent of HA_URL above (the supervisor proxy does not expose /mcp_server).
+# ============================================================
+_MCP_TOKEN=$(cat "$_TOKEN_FILE" 2>/dev/null || echo '')
+
+if [ -n "$_MCP_TOKEN" ]; then
+    su -s /bin/bash claude -c "
+        export HOME=$CLAUDE_HOME
+        export NPM_GLOBAL=$CLAUDE_HOME/npm-global
+        export PATH=\$NPM_GLOBAL/bin:/root/.bun/bin:\$PATH
+        if ! command -v claude >/dev/null 2>&1; then
+            echo '[claude-code] claude command unavailable after setup.'
+            exit 127
+        fi
+        claude mcp add homeassistant 'http://homeassistant:8123/mcp_server/sse' \
+            -t sse -s user \
+            -H 'Authorization: Bearer $_MCP_TOKEN' \
+            2>&1
+    " && echo "[claude-code] HA MCP server registered via claude mcp add." \
+      || echo "[claude-code] WARNING: claude mcp add failed — HA MCP server not registered."
+else
+    echo "[claude-code] WARNING: no HA token available — skipping MCP server config."
+fi
+
+# ============================================================
 # Start ttyd web terminal
 # ============================================================
 INGRESS_ENTRY="${INGRESS_PATH:-}"
@@ -309,12 +401,11 @@ if [ ! -f "$CLAUDE_HOME/.claude/.credentials.json" ]; then
 fi
 
 # ============================================================
-# DAEMON_AUTOSTART=false → manual-setup mode: skip Telegram setup AND
-# the claude daemon launch, keep only ttyd running. Use this to open
-# the Web UI and manually run `claude --dangerously-skip-permissions`
-# to accept one-time TUI prompts (trust dialog, bypass-permissions
-# warning). After prompts are accepted and claude has persisted them,
-# flip DAEMON_AUTOSTART back to true.
+# DAEMON_AUTOSTART=false → manual-setup mode: keep only ttyd running. Use
+# this to open the Web UI and manually run `claude --dangerously-skip-permissions`
+# to accept one-time TUI prompts (trust dialog, bypass-permissions warning) or
+# inspect channel/plugin state. After prompts are accepted and claude has
+# persisted them, flip DAEMON_AUTOSTART back to true.
 # ============================================================
 if [ "$DAEMON_AUTOSTART" != "true" ]; then
     echo "[claude-code] ============================================================"
@@ -352,6 +443,7 @@ echo "[claude-code] Remote control URL will appear in the logs and as an HA noti
 # accept prompts, type messages, watch it work — then detach with Ctrl-b d.
 # tmux also provides the PTY that claude needs to stay in interactive mode.
 TMUX_SESSION=claude
+CLAUDE_PROJECT_DIR="$CLAUDE_HOME/.claude/projects/$(printf '%s' "$WORK_DIR" | sed 's#/#-#g')"
 
 TRY_CONTINUE=yes
 while true; do
@@ -363,7 +455,7 @@ while true; do
     # internally. The fast-exit fallback below (< 15s) catches any other resume
     # failures without needing a pre-emptive size gate.
     if [ "$TRY_CONTINUE" = "yes" ]; then
-        RECENT_SESSION=$(ls -t "$CLAUDE_HOME/.claude/projects/-share-claude-workspace/"*.jsonl 2>/dev/null | head -1)
+        RECENT_SESSION=$(ls -t "$CLAUDE_PROJECT_DIR"/*.jsonl 2>/dev/null | head -1)
         if [ -n "$RECENT_SESSION" ]; then
             # Check if the last non-empty line contains a tool_use with no following
             # tool_result — sign of an in-flight tool call cut short by unclean exit.
@@ -427,10 +519,16 @@ print('pending' if last_tool_use else 'clean')
         export NO_COLOR=1
         STOKEN=\$(cat $CLAUDE_HOME/.supervisor_token 2>/dev/null || echo '')
         HA_URL_VAL=\$(cat $CLAUDE_HOME/.ha_url 2>/dev/null || echo 'http://supervisor/core')
+        TELEGRAM_TOKEN_VAL=\$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' '$PLUGIN_ENV' 2>/dev/null | head -1)
+        TELEGRAM_ENV_ARGS=''
+        if [ -n \"\$TELEGRAM_TOKEN_VAL\" ]; then
+            TELEGRAM_ENV_ARGS=\"-e TELEGRAM_BOT_TOKEN=\$TELEGRAM_TOKEN_VAL -e TELEGRAM_STATE_DIR=$TELEGRAM_PLUGIN_DIR\"
+        fi
         tmux kill-session -t $TMUX_SESSION 2>/dev/null || true
         cd '$WORK_DIR' && tmux new-session -d -s $TMUX_SESSION -x 200 -y 50 \
             -e SUPERVISOR_TOKEN=\"\$STOKEN\" \
             -e HA_URL=\"\$HA_URL_VAL\" \
+            \$TELEGRAM_ENV_ARGS \
             \"claude --model claude-sonnet-4-6 $CONTINUE_FLAG --dangerously-skip-permissions --remote-control $CHANNELS_ARG\"
     "
 

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Wrapper that runs the vision addon entrypoint with a startup-retry guard.
 #
-# HA Supervisor doesn't support `restart_policy: on-failure:max_retries`, so
-# we enforce a 3-attempt cap ourselves via a counter file in /data. The
+# HA Supervisor add-on config does not accept restart_policy, so we enforce a
+# 3-attempt startup cap ourselves via a counter file in /data. The
 # Python entrypoint resets the counter to 0 once it captures its first frame
 # (i.e. the camera came up). After 3 consecutive startup failures, we exit
 # cleanly so the supervisor stops restarting; the counter is reset at that
