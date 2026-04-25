@@ -1,3 +1,10 @@
+## 1.2.2
+
+- Reordered configuration options into logical groups (HA, Camera, Capture,
+  Gesture, Face, Motion) and prefixed each field's display name with its
+  group, so related settings sit together in the addon UI. No keys
+  changed — saved configurations carry over unchanged.
+
 ## 1.2.1
 
 - **Replaced the live DHCP WebSocket watcher with on-demand resolution.**

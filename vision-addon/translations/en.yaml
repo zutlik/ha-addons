@@ -1,84 +1,84 @@
 configuration:
   ha_token:
-    name: HA Long-Lived Access Token
+    name: "HA — Long-Lived Access Token"
     description: >-
       Required for DHCP discovery and for writing events/sensors back to HA.
       Create one at HA → Profile → Security → "Long-Lived Access Tokens" →
       Create Token. The token must belong to an admin user — DHCP discovery
       requires admin scope.
   camera_hostname:
-    name: Camera Hostname
+    name: "Camera — Hostname"
     description: >-
       DHCP hostname of the camera as it appears on Settings → Devices &
       Services → DHCP. The addon resolves this to the camera's current IP
       via HA's DHCP discovery and reconnects automatically when the IP
       changes. Leave empty if you set Stream URL instead.
   camera_user:
-    name: Camera RTSP User
+    name: "Camera — RTSP User"
     description: Username for the camera's RTSP stream.
   camera_password:
-    name: Camera RTSP Password
+    name: "Camera — RTSP Password"
     description: Password for the camera's RTSP stream.
   rtsp_path:
-    name: RTSP Path
+    name: "Camera — RTSP Path"
     description: >-
       Path portion of the RTSP URL. Reolink default is
       /h264Preview_01_sub for the sub stream, /h264Preview_01_main for main.
   rtsp_port:
-    name: RTSP Port
+    name: "Camera — RTSP Port"
     description: TCP port for RTSP. Defaults to 554.
   stream_url:
-    name: Stream URL (override)
+    name: "Camera — Stream URL (override)"
     description: >-
       Optional. If set, takes precedence over hostname discovery — connect
       to this URL directly. Use for static IPs, /dev/video* devices, or
       setups without HA's DHCP integration. Format
       rtsp://user:pass@host:port/path.
   detection_fps:
-    name: Detection FPS
+    name: "Capture — Detection FPS"
     description: Frames per second for detection processing (1-15)
-  enable_face_detection:
-    name: Enable Face Detection
-    description: Run the face detector. Disable for lowest gesture latency.
-  face_confidence:
-    name: Face Confidence Threshold
-    description: Reserved face detection threshold setting.
-  face_detection_interval_seconds:
-    name: Face Detection Interval
-    description: Seconds between face detector runs when face detection is enabled.
-  gesture_confidence:
-    name: Gesture Confidence Threshold
-    description: Minimum confidence for hand detection.
-  gesture_tracking_confidence:
-    name: Gesture Tracking Confidence
-    description: Minimum confidence for MediaPipe hand tracking.
-  gesture_model_complexity:
-    name: Gesture Model Complexity
-    description: MediaPipe hand model complexity. Use 0 for Raspberry Pi performance.
-  gesture_cooldown_seconds:
-    name: Gesture Cooldown (seconds)
-    description: Minimum seconds between repeated gesture events
-  gesture_hold_seconds:
-    name: Gesture Hold (seconds)
-    description: Seconds a gesture must be stable before firing.
-  gesture_miss_grace_seconds:
-    name: Gesture Miss Grace (seconds)
-    description: Time to tolerate brief missed hand frames without resetting the gesture hold.
-  gesture_min_frames:
-    name: Gesture Minimum Frames
-    description: Minimum matching frames required before firing a gesture.
-  motion_cooldown_seconds:
-    name: Motion Cooldown (seconds)
-    description: Minimum seconds between motion events
   camera_width:
-    name: Camera Width
+    name: "Capture — Camera Width"
     description: Requested local webcam capture width.
   camera_height:
-    name: Camera Height
+    name: "Capture — Camera Height"
     description: Requested local webcam capture height.
   processing_width:
-    name: Processing Width
+    name: "Capture — Processing Width"
     description: Width used for gesture, motion, and face processing. Lower values reduce CPU.
   jpeg_quality:
-    name: Stream JPEG Quality
+    name: "Capture — Stream JPEG Quality"
     description: JPEG quality for the web preview stream.
+  gesture_confidence:
+    name: "Gesture — Confidence Threshold"
+    description: Minimum confidence for hand detection.
+  gesture_tracking_confidence:
+    name: "Gesture — Tracking Confidence"
+    description: Minimum confidence for MediaPipe hand tracking.
+  gesture_model_complexity:
+    name: "Gesture — Model Complexity"
+    description: MediaPipe hand model complexity. Use 0 for Raspberry Pi performance.
+  gesture_cooldown_seconds:
+    name: "Gesture — Cooldown (seconds)"
+    description: Minimum seconds between repeated gesture events
+  gesture_hold_seconds:
+    name: "Gesture — Hold (seconds)"
+    description: Seconds a gesture must be stable before firing.
+  gesture_miss_grace_seconds:
+    name: "Gesture — Miss Grace (seconds)"
+    description: Time to tolerate brief missed hand frames without resetting the gesture hold.
+  gesture_min_frames:
+    name: "Gesture — Minimum Frames"
+    description: Minimum matching frames required before firing a gesture.
+  enable_face_detection:
+    name: "Face — Enable Detection"
+    description: Run the face detector. Disable for lowest gesture latency.
+  face_confidence:
+    name: "Face — Confidence Threshold"
+    description: Reserved face detection threshold setting.
+  face_detection_interval_seconds:
+    name: "Face — Detection Interval (seconds)"
+    description: Seconds between face detector runs when face detection is enabled.
+  motion_cooldown_seconds:
+    name: "Motion — Cooldown (seconds)"
+    description: Minimum seconds between motion events

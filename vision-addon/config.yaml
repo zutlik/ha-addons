@@ -1,5 +1,5 @@
 name: Vision Addon
-version: "1.2.1"
+version: "1.2.2"
 slug: vision-addon
 description: Camera-based gesture detection for Home Assistant (supports RTSP and local webcam)
 url: "https://github.com/zutlik/ha-addons/tree/main/vision-addon"
@@ -9,18 +9,26 @@ arch:
 init: false
 map:
   - share:rw
+# Options are grouped by purpose for readability in the addon UI.
+# HA's addon UI doesn't render section headers — we approximate them with
+# "Group — Field" name prefixes in translations/en.yaml.
 options:
+  # --- HA connection ---
   ha_token: ""
+  # --- Camera source ---
   camera_hostname: ""
   camera_user: ""
   camera_password: ""
   rtsp_path: "/h264Preview_01_sub"
   rtsp_port: 554
   stream_url: ""
+  # --- Capture & processing ---
   detection_fps: 10
-  enable_face_detection: false
-  face_confidence: 0.6
-  face_detection_interval_seconds: 3.0
+  camera_width: 640
+  camera_height: 480
+  processing_width: 320
+  jpeg_quality: 65
+  # --- Gesture detection ---
   gesture_confidence: 0.55
   gesture_tracking_confidence: 0.5
   gesture_model_complexity: 0
@@ -28,17 +36,20 @@ options:
   gesture_hold_seconds: 0.2
   gesture_miss_grace_seconds: 0.35
   gesture_min_frames: 2
+  # --- Face detection ---
+  enable_face_detection: false
+  face_confidence: 0.6
+  face_detection_interval_seconds: 3.0
+  # --- Motion detection ---
   motion_cooldown_seconds: 5
-  camera_width: 640
-  camera_height: 480
-  processing_width: 320
-  jpeg_quality: 65
 schema:
+  # --- HA connection ---
   # Long-Lived Access Token from HA → Profile → Security. Required for the
   # WebSocket DHCP discovery used to resolve camera_hostname → IP. Only
   # optional if you use stream_url (direct-URL mode) and don't need state
   # or event writes back to HA.
   ha_token: "password?"
+  # --- Camera source ---
   # DHCP hostname of the camera as seen on Settings → Devices → DHCP. The addon
   # subscribes to HA's DHCP discovery and resolves this to a current IP at
   # startup, then watches for changes.
@@ -51,10 +62,13 @@ schema:
   # directly. Use for static IPs, /dev/video* devices, or if HA's DHCP
   # integration isn't running. Format: rtsp://user:pass@host:port/path
   stream_url: "str?"
+  # --- Capture & processing ---
   detection_fps: "int"
-  enable_face_detection: "bool"
-  face_confidence: "float"
-  face_detection_interval_seconds: "float"
+  camera_width: "int"
+  camera_height: "int"
+  processing_width: "int"
+  jpeg_quality: "int"
+  # --- Gesture detection ---
   gesture_confidence: "float"
   gesture_tracking_confidence: "float"
   gesture_model_complexity: "int"
@@ -62,11 +76,12 @@ schema:
   gesture_hold_seconds: "float"
   gesture_miss_grace_seconds: "float"
   gesture_min_frames: "int"
+  # --- Face detection ---
+  enable_face_detection: "bool"
+  face_confidence: "float"
+  face_detection_interval_seconds: "float"
+  # --- Motion detection ---
   motion_cooldown_seconds: "int"
-  camera_width: "int"
-  camera_height: "int"
-  processing_width: "int"
-  jpeg_quality: "int"
 ingress: true
 ingress_port: 8080
 panel_icon: mdi:camera-account
