@@ -1,7 +1,39 @@
 configuration:
+  ha_token:
+    name: HA Long-Lived Access Token
+    description: >-
+      Required for DHCP discovery and for writing events/sensors back to HA.
+      Create one at HA → Profile → Security → "Long-Lived Access Tokens" →
+      Create Token. The token must belong to an admin user — DHCP discovery
+      requires admin scope.
+  camera_hostname:
+    name: Camera Hostname
+    description: >-
+      DHCP hostname of the camera as it appears on Settings → Devices &
+      Services → DHCP. The addon resolves this to the camera's current IP
+      via HA's DHCP discovery and reconnects automatically when the IP
+      changes. Leave empty if you set Stream URL instead.
+  camera_user:
+    name: Camera RTSP User
+    description: Username for the camera's RTSP stream.
+  camera_password:
+    name: Camera RTSP Password
+    description: Password for the camera's RTSP stream.
+  rtsp_path:
+    name: RTSP Path
+    description: >-
+      Path portion of the RTSP URL. Reolink default is
+      /h264Preview_01_sub for the sub stream, /h264Preview_01_main for main.
+  rtsp_port:
+    name: RTSP Port
+    description: TCP port for RTSP. Defaults to 554.
   stream_url:
-    name: Stream URL
-    description: RTSP URL or local webcam device path (e.g. /dev/video0).
+    name: Stream URL (override)
+    description: >-
+      Optional. If set, takes precedence over hostname discovery — connect
+      to this URL directly. Use for static IPs, /dev/video* devices, or
+      setups without HA's DHCP integration. Format
+      rtsp://user:pass@host:port/path.
   detection_fps:
     name: Detection FPS
     description: Frames per second for detection processing (1-15)

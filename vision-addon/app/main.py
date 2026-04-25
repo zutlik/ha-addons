@@ -3,6 +3,7 @@ import os
 import time
 import logging
 import threading
+import urllib.parse
 import numpy as np
 
 # Must be set before cv2 is imported so ffmpeg uses TCP for RTSP.
@@ -11,6 +12,7 @@ import cv2
 
 from gesture_engine import GestureEngine
 from ha_client import close_session, fire_event, set_last_gesture, update_sensors
+from dhcp_discovery import DHCPDiscovery, DHCPDiscoveryError
 from web_ui import create_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -24,7 +26,20 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-STREAM_URL = os.environ.get("STREAM_URL", "/dev/video0")
+# --- Stream source ---
+# STREAM_URL: optional override. If set, used as-is and DHCP discovery is skipped.
+# Otherwise CAMERA_HOSTNAME is resolved via HA's DHCP discovery WebSocket.
+STREAM_URL = os.environ.get("STREAM_URL", "").strip()
+CAMERA_HOSTNAME = os.environ.get("CAMERA_HOSTNAME", "").strip()
+CAMERA_USER = os.environ.get("CAMERA_USER", "").strip()
+CAMERA_PASSWORD = os.environ.get("CAMERA_PASSWORD", "")
+RTSP_PATH = os.environ.get("RTSP_PATH", "/h264Preview_01_sub")
+RTSP_PORT = int(os.environ.get("RTSP_PORT", "554"))
+HA_URL = os.environ.get("HA_URL", "http://homeassistant:8123")
+HA_TOKEN = os.environ.get("HA_TOKEN", "").strip()
+DISCOVERY_TIMEOUT_SECONDS = float(os.environ.get("DISCOVERY_TIMEOUT_SECONDS", "60"))
+STARTUP_ATTEMPTS_FILE = os.environ.get("STARTUP_ATTEMPTS_FILE", "/data/.startup_attempts")
+
 DETECTION_FPS = max(1, int(os.environ.get("DETECTION_FPS", "10")))
 ENABLE_FACE_DETECTION = _env_bool("ENABLE_FACE_DETECTION", False)
 FACE_CONFIDENCE = float(os.environ.get("FACE_CONFIDENCE", "0.6"))
@@ -32,10 +47,10 @@ FACE_DETECTION_INTERVAL = max(0.1, float(os.environ.get("FACE_DETECTION_INTERVAL
 GESTURE_CONFIDENCE = float(os.environ.get("GESTURE_CONFIDENCE", "0.55"))
 GESTURE_TRACKING_CONFIDENCE = float(os.environ.get("GESTURE_TRACKING_CONFIDENCE", "0.5"))
 GESTURE_MODEL_COMPLEXITY = int(os.environ.get("GESTURE_MODEL_COMPLEXITY", "0"))
-GESTURE_COOLDOWN = float(os.environ.get("GESTURE_COOLDOWN", "2"))
-GESTURE_HOLD_SECONDS = max(0.1, float(os.environ.get("GESTURE_HOLD_SECONDS", "0.6")))
+GESTURE_COOLDOWN = float(os.environ.get("GESTURE_COOLDOWN", "1.2"))
+GESTURE_HOLD_SECONDS = max(0.1, float(os.environ.get("GESTURE_HOLD_SECONDS", "0.2")))
 GESTURE_MISS_GRACE_SECONDS = max(0.0, float(os.environ.get("GESTURE_MISS_GRACE_SECONDS", "0.35")))
-GESTURE_MIN_FRAMES = max(1, int(os.environ.get("GESTURE_MIN_FRAMES", "3")))
+GESTURE_MIN_FRAMES = max(1, int(os.environ.get("GESTURE_MIN_FRAMES", "2")))
 MOTION_COOLDOWN = float(os.environ.get("MOTION_COOLDOWN", "5"))
 CAMERA_WIDTH = max(160, int(os.environ.get("CAMERA_WIDTH", "640")))
 CAMERA_HEIGHT = max(120, int(os.environ.get("CAMERA_HEIGHT", "480")))
@@ -43,8 +58,37 @@ PROCESSING_WIDTH = max(0, int(os.environ.get("PROCESSING_WIDTH", "320")))
 JPEG_QUALITY = min(95, max(30, int(os.environ.get("JPEG_QUALITY", "65"))))
 
 
+def _build_rtsp_url(ip: str) -> str:
+    user = urllib.parse.quote(CAMERA_USER, safe="")
+    pw = urllib.parse.quote(CAMERA_PASSWORD, safe="")
+    path = RTSP_PATH if RTSP_PATH.startswith("/") else "/" + RTSP_PATH
+    return f"rtsp://{user}:{pw}@{ip}:{RTSP_PORT}{path}"
+
+
+def _redact(url: str) -> str:
+    """Strip credentials from URL for logging."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.username or parsed.password:
+            netloc = parsed.hostname or ""
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            return urllib.parse.urlunparse(parsed._replace(netloc=netloc))
+    except Exception:
+        pass
+    return url
+
+
+def _reset_startup_attempts() -> None:
+    try:
+        with open(STARTUP_ATTEMPTS_FILE, "w") as f:
+            f.write("0")
+    except OSError as e:
+        logger.warning("Could not reset startup attempts file: %s", e)
+
+
 class VisionLoop:
-    def __init__(self):
+    def __init__(self, initial_stream_url: str):
         self.face_engine = None
         if ENABLE_FACE_DETECTION:
             from face_engine import FaceEngine
@@ -57,6 +101,9 @@ class VisionLoop:
             model_complexity=GESTURE_MODEL_COMPLEXITY,
         )
         self.running = False
+        self._stream_url = initial_stream_url
+        self._pending_stream_url: str | None = None
+        self._first_frame_seen = False
 
         # Shared state for web UI
         self.latest_frame: bytes = b""
@@ -80,6 +127,12 @@ class VisionLoop:
         self._person_fired_at: dict = {}
         self._last_face_result = {"count": 0, "faces": []}
         self._last_face_processed_at: float = 0.0
+
+    def update_stream_url(self, new_url: str) -> None:
+        """Request the capture loop to reopen with a new URL on its next iteration."""
+        if new_url != self._stream_url:
+            logger.info("Stream URL update queued: %s", _redact(new_url))
+            self._pending_stream_url = new_url
 
     def _processing_frame(self, frame_rgb: np.ndarray) -> np.ndarray:
         if PROCESSING_WIDTH <= 0 or frame_rgb.shape[1] <= PROCESSING_WIDTH:
@@ -179,16 +232,17 @@ class VisionLoop:
 
         await update_sensors(count, person_states, motion_on)
 
-    async def run(self):
-        if STREAM_URL.startswith("/dev/video"):
-            source = int(STREAM_URL.replace("/dev/video", "") or "0")
+    def _open_capture(self) -> cv2.VideoCapture | None:
+        url = self._stream_url
+        if url.startswith("/dev/video"):
+            source = int(url.replace("/dev/video", "") or "0")
         else:
-            source = STREAM_URL  # RTSP or other URL
+            source = url
 
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
-            logger.error(f"Cannot open stream: {STREAM_URL}")
-            return
+            logger.error("Cannot open stream: %s", _redact(url))
+            return None
 
         if isinstance(source, int):
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
@@ -196,27 +250,50 @@ class VisionLoop:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
             cap.set(cv2.CAP_PROP_FPS, max(DETECTION_FPS, 10))
 
-        # Minimize capture buffering for both local cameras and RTSP streams.
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return cap
+
+    async def run(self):
+        cap = self._open_capture()
+        if cap is None:
+            return
 
         interval = 1.0 / DETECTION_FPS
         self.running = True
         logger.info(
-            "Vision loop started at %s FPS, face detection %s, processing width %s",
+            "Vision loop started at %s FPS, face detection %s, processing width %s, source=%s",
             DETECTION_FPS,
             "enabled" if self.face_engine is not None else "disabled",
             PROCESSING_WIDTH,
+            _redact(self._stream_url),
         )
         await set_last_gesture("none")  # ensure entity exists from startup
 
         try:
             while self.running:
+                # Honor URL changes requested by the DHCP watcher.
+                if self._pending_stream_url:
+                    new_url = self._pending_stream_url
+                    self._pending_stream_url = None
+                    self._stream_url = new_url
+                    logger.info("Reopening capture with new URL: %s", _redact(new_url))
+                    cap.release()
+                    cap = self._open_capture()
+                    if cap is None:
+                        await asyncio.sleep(2.0)
+                        continue
+
                 loop_start = time.time()
                 ret, frame = cap.read()
                 if not ret:
                     logger.warning("Failed to read frame")
                     await asyncio.sleep(interval)
                     continue
+
+                if not self._first_frame_seen:
+                    self._first_frame_seen = True
+                    _reset_startup_attempts()
+                    logger.info("First frame captured — startup retry counter reset.")
 
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 processing_rgb = self._processing_frame(frame_rgb)
@@ -252,20 +329,73 @@ class VisionLoop:
             self.gesture_engine.close()
 
 
+async def _resolve_stream_source() -> tuple[str, DHCPDiscovery | None]:
+    """Return (stream_url, dhcp_instance_or_None).
+
+    If STREAM_URL env var is set, it's used directly and no discovery happens.
+    Otherwise we resolve CAMERA_HOSTNAME via HA's DHCP discovery and return the
+    resulting RTSP URL plus the still-connected DHCPDiscovery instance for the
+    caller to keep watching.
+    """
+    if STREAM_URL:
+        logger.info("Using STREAM_URL override: %s", _redact(STREAM_URL))
+        return STREAM_URL, None
+
+    if not CAMERA_HOSTNAME:
+        raise RuntimeError(
+            "No stream source configured: set either stream_url or camera_hostname."
+        )
+    if not HA_TOKEN:
+        raise RuntimeError(
+            "ha_token is required for DHCP discovery (Long-Lived Access Token from "
+            "HA → Profile → Security)."
+        )
+    if not CAMERA_USER or not CAMERA_PASSWORD:
+        raise RuntimeError(
+            "camera_user and camera_password are required when using DHCP discovery."
+        )
+
+    dhcp = DHCPDiscovery(HA_URL, HA_TOKEN, CAMERA_HOSTNAME)
+    try:
+        ip = await dhcp.resolve(timeout=DISCOVERY_TIMEOUT_SECONDS)
+    except (DHCPDiscoveryError, asyncio.TimeoutError) as e:
+        await dhcp.close()
+        raise RuntimeError(f"DHCP discovery failed: {e}") from e
+    except Exception:
+        await dhcp.close()
+        raise
+
+    return _build_rtsp_url(ip), dhcp
+
+
+async def _watch_ip_changes(dhcp: DHCPDiscovery, vision: VisionLoop) -> None:
+    async def on_change(new_ip: str) -> None:
+        vision.update_stream_url(_build_rtsp_url(new_ip))
+
+    try:
+        await dhcp.watch(on_change)
+    except Exception:
+        logger.exception("DHCP watcher exited; live IP updates disabled until restart.")
+
+
 async def main():
-    vision = VisionLoop()
+    stream_url, dhcp = await _resolve_stream_source()
+    vision = VisionLoop(initial_stream_url=stream_url)
     app = create_app(vision)
 
     import uvicorn
     config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="warning")
     server = uvicorn.Server(config)
 
+    tasks = [vision.run(), server.serve()]
+    if dhcp is not None:
+        tasks.append(_watch_ip_changes(dhcp, vision))
+
     try:
-        await asyncio.gather(
-            vision.run(),
-            server.serve(),
-        )
+        await asyncio.gather(*tasks)
     finally:
+        if dhcp is not None:
+            await dhcp.close()
         await close_session()
 
 

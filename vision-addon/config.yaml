@@ -1,5 +1,5 @@
 name: Vision Addon
-version: "1.1.8"
+version: "1.2.0"
 slug: vision-addon
 description: Camera-based gesture detection for Home Assistant (supports RTSP and local webcam)
 url: "https://github.com/zutlik/ha-addons/tree/main/vision-addon"
@@ -10,7 +10,13 @@ init: false
 map:
   - share:rw
 options:
-  stream_url: "rtsp://admin:7aX2W-@p6@10.100.102.20:554/h264Preview_01_sub"
+  ha_token: ""
+  camera_hostname: ""
+  camera_user: ""
+  camera_password: ""
+  rtsp_path: "/h264Preview_01_sub"
+  rtsp_port: 554
+  stream_url: ""
   detection_fps: 10
   enable_face_detection: false
   face_confidence: 0.6
@@ -28,8 +34,23 @@ options:
   processing_width: 320
   jpeg_quality: 65
 schema:
-  # RTSP URL (e.g. rtsp://user:pass@ip/live) or local device (/dev/video0)
-  stream_url: "str"
+  # Long-Lived Access Token from HA → Profile → Security. Required for the
+  # WebSocket DHCP discovery used to resolve camera_hostname → IP. Only
+  # optional if you use stream_url (direct-URL mode) and don't need state
+  # or event writes back to HA.
+  ha_token: "password?"
+  # DHCP hostname of the camera as seen on Settings → Devices → DHCP. The addon
+  # subscribes to HA's DHCP discovery and resolves this to a current IP at
+  # startup, then watches for changes.
+  camera_hostname: "str?"
+  camera_user: "str?"
+  camera_password: "password?"
+  rtsp_path: "str?"
+  rtsp_port: "port?"
+  # Optional. If set, skips DHCP discovery entirely and connects to this URL
+  # directly. Use for static IPs, /dev/video* devices, or if HA's DHCP
+  # integration isn't running. Format: rtsp://user:pass@host:port/path
+  stream_url: "str?"
   detection_fps: "int"
   enable_face_detection: "bool"
   face_confidence: "float"
@@ -46,8 +67,7 @@ schema:
   camera_height: "int"
   processing_width: "int"
   jpeg_quality: "int"
-restart_policy: unless-stopped
-homeassistant_api: true
+restart_policy: on-failure
 ingress: true
 ingress_port: 8080
 panel_icon: mdi:camera-account

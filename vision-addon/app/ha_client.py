@@ -5,8 +5,8 @@ from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
-HA_URL = os.environ.get("HA_URL", "http://supervisor/core")
-TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
+HA_URL = os.environ.get("HA_URL", "http://homeassistant:8123")
+TOKEN = os.environ.get("HA_TOKEN", "")
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",

@@ -1,3 +1,23 @@
+## 1.2.0
+
+- **Camera IP auto-discovery via HA's DHCP integration.** Configure the
+  camera's hostname (as seen on `/config/dhcp`) instead of a hard-coded URL.
+  The addon resolves the hostname to a current IP at startup and reconnects
+  automatically when the IP changes — no addon restart required.
+- New required option: `ha_token` (Long-Lived Access Token from HA → Profile
+  → Security). Used for both the DHCP WebSocket subscription and writing
+  events/sensors back to HA. Must be created by an admin user.
+- New options: `camera_hostname`, `camera_user`, `camera_password`,
+  `rtsp_path`, `rtsp_port`. The legacy `stream_url` option is retained as an
+  optional override; if set, it bypasses discovery entirely.
+- Removed the supervisor token path. `homeassistant_api: true` is no longer
+  needed; all HA API access flows through the LLAT against
+  `http://homeassistant:8123`.
+- Startup hardening: 60-second timeout per attempt; supervisor restarts on
+  failure; capped at 3 consecutive failures via a counter file in `/data`.
+- `restart_policy` changed from `unless-stopped` to `on-failure` so the
+  retry cap actually takes effect.
+
 ## 1.1.8
 
 - Lowered default `gesture_hold_seconds` (0.6 → 0.2) and `gesture_min_frames` (3 → 2) for faster initial recognition.
