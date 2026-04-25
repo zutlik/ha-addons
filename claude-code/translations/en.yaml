@@ -4,6 +4,11 @@ configuration:
     description: >-
       Bot token from @BotFather. Enables Claude Code to receive prompts and
       send responses via Telegram. Leave empty to disable Telegram.
+  TELEGRAM_CHAT_ID:
+    name: Telegram Chat ID
+    description: >-
+      Numeric Telegram user/chat ID to notify and pre-allowlist for inbound
+      Telegram messages. Get it from @userinfobot.
   WORK_DIR:
     name: Work Directory
     description: >-
@@ -15,3 +20,13 @@ configuration:
       Check for a newer Claude Code version on each startup.
       Only downloads if a newer version is available; the binary is cached
       in persistent storage so subsequent restarts are fast.
+  DAEMON_AUTOSTART:
+    name: Daemon Autostart
+    description: >-
+      Start the persistent Claude Code daemon automatically. Disable temporarily
+      to use only the Web UI terminal for manual setup or debugging.
+  HA_TOKEN:
+    name: Home Assistant Token
+    description: >-
+      Optional Long-Lived Access Token fallback for Home Assistant API access
+      when the Supervisor token is unavailable or cannot reach HA Core.

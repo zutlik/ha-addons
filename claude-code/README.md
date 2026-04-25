@@ -9,7 +9,7 @@ Run [Claude Code](https://claude.ai/code) as a persistent AI agent on your Home 
 - **Remote control** — access your session from anywhere via claude.ai/code
 - **Web terminal** — browser-based terminal for login and interactive use
 - **Smart updates** — automatically installs new Claude Code versions without rebuilding the image
-- **Memory** — maintains context across restarts via `memory.md`
+- **Memory** — maintains context across restarts via `MEMORY.md`
 
 ## Requirements
 
